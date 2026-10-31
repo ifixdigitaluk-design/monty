@@ -1,0 +1,65 @@
+name: Desktop (Windows)
+
+# Builds the Windows installer and attaches it to a GitHub Release.
+#   Run manually (Actions → Desktop (Windows) → Run workflow) or push a tag like desktop-v0.2.0.
+# Set the repository variable MONTY_URL (Settings → Secrets and variables → Actions → Variables) to your
+# team's https address, e.g. https://yourteam-monty.duckdns.org — it is baked into the app as its start page.
+# The installer is NOT code-signed: Windows SmartScreen shows "Windows protected your PC" on first run
+# (More info → Run anyway). Signing needs a code-signing certificate (see docs/DEPLOYMENT_GUIDE.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for the release, e.g. 0.2.0'
+        required: true
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: write # to create the release and upload the installer
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      MONTY_DEFAULT_URL: ${{ vars.MONTY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the app address is configured
+        shell: bash
+        run: |
+          case "$MONTY_DEFAULT_URL" in
+            https://*) echo "App will open $MONTY_DEFAULT_URL" ;;
+            *) echo "::error::Set the repository variable MONTY_URL to your https address first"; exit 1 ;;
+          esac
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: apps/desktop/src-tauri }
+      - name: Work out the version
+        id: v
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#desktop-v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Windows installers need a numeric version (major.minor.patch).
+          node -e "const f='apps/desktop/src-tauri/tauri.conf.json';const c=JSON.parse(require('fs').readFileSync(f));c.version='$V';require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
+      - name: Build installer
+        working-directory: apps/desktop/src-tauri
+        run: npx --yes @tauri-apps/cli@2.12.1 build --bundles msi,nsis
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ steps.v.outputs.version }}
+          cd apps/desktop/src-tauri/target/release/bundle
+          ls -R msi nsis
+          gh release create "desktop-v$V" msi/*.msi nsis/*.exe \
+            --title "Monty desktop $V (Windows)" \
+            --notes "Windows installer for Monty $V. Opens ${MONTY_DEFAULT_URL}. Unsigned: on first run choose More info → Run anyway." \
+            --target "$GITHUB_SHA" 2>/dev/null \
+          || gh release upload "desktop-v$V" msi/*.msi nsis/*.exe --clobber

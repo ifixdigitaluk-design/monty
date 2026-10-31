@@ -9,8 +9,15 @@
 use tauri::{webview::PageLoadEvent, WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
+/// Address baked in at build time (release builds set MONTY_DEFAULT_URL to the team's https address);
+/// the MONTY_URL environment variable can still override it on a given machine.
+const DEFAULT_URL: &str = match option_env!("MONTY_DEFAULT_URL") {
+    Some(u) => u,
+    None => "http://localhost:3000",
+};
+
 fn app_url() -> Url {
-    let raw = std::env::var("MONTY_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let raw = std::env::var("MONTY_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
     match Url::parse(&raw) {
         Ok(u) if u.scheme() == "https" || (u.scheme() == "http" && matches!(u.host_str(), Some("localhost") | Some("127.0.0.1"))) => u,
         _ => {
