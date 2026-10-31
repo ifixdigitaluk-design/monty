@@ -51,6 +51,21 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
+    // Chat events carry their audience: everyone in the workspace (public channels) or the member list.
+    this.listen('monty_chat', (payload) => {
+      if (!payload) return;
+      try {
+        const e = JSON.parse(payload) as { workspaceId: string; memberIds: string[] | null } & Record<string, unknown>;
+        const { memberIds, ...pointer } = e;
+        for (const s of this.subscribers.values()) {
+          if (s.workspaceId !== e.workspaceId) continue;
+          if (memberIds && !memberIds.includes(s.userId)) continue;
+          this.write(s, 'chat', pointer);
+        }
+      } catch {
+        /* ignore malformed payloads */
+      }
+    });
     await this.connectListener();
     this.timers.push(setInterval(() => this.heartbeat(), HEARTBEAT_MS));
     this.timers.push(setInterval(() => void this.recheckAccess(), RECHECK_MS));
@@ -116,7 +131,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly channels = new Map<string, ((payload: string) => void)[]>();
 
   /** Subscribes to an additional Postgres NOTIFY channel on the shared listener connection. */
-  listen(channel: 'monty_mail', cb: (payload: string) => void) {
+  listen(channel: 'monty_mail' | 'monty_chat', cb: (payload: string) => void) {
     const first = !this.channels.has(channel);
     this.channels.set(channel, [...(this.channels.get(channel) ?? []), cb]);
     if (first && this.listener) void this.listener.query(`LISTEN ${channel}`).catch(() => undefined);

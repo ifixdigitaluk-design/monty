@@ -457,7 +457,7 @@ export const CalendarQuerySchema = z
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Range is limited to 62 days' });
 
 export interface SearchResultDto {
-  type: 'project' | 'task' | 'comment' | 'document';
+  type: 'project' | 'task' | 'comment' | 'document' | 'message';
   id: string;
   title: string;
   snippet: string;
@@ -467,6 +467,9 @@ export interface SearchResultDto {
   taskId: string | null;
   workspaceId: string;
   workspaceName: string;
+  /** Chat results: where to open the message. */
+  channelId?: string;
+  parentId?: string | null;
 }
 
 export interface CalendarEntryDto {
@@ -700,4 +703,72 @@ export interface PendingOrganisationDeletionDto {
   name: string;
   deletedAt: string;
   purgeAfter: string;
+}
+
+// ---------- team chat ----------
+const channelName = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((s) => s.replace(/^#/, '').replace(/\s+/g, '-'))
+  .pipe(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,79}$/, 'Use lower-case letters, numbers, - and _ (up to 80)'));
+export const CreateChannelSchema = z.strictObject({
+  id: uuid.optional(),
+  name: channelName,
+  topic: z.string().trim().max(250).default(''),
+  private: z.boolean().default(false),
+  memberIds: z.array(uuid).max(149).default([]),
+});
+export type CreateChannelInput = z.infer<typeof CreateChannelSchema>;
+export const UpdateChannelSchema = z.strictObject({
+  name: channelName.optional(),
+  topic: z.string().trim().max(250).optional(),
+  archived: z.boolean().optional(),
+});
+export type UpdateChannelInput = z.infer<typeof UpdateChannelSchema>;
+export const OpenDmSchema = z.strictObject({ userIds: z.array(uuid).min(1).max(7) });
+export const AddChannelMembersSchema = z.strictObject({ userIds: z.array(uuid).min(1).max(50) });
+export const PostMessageSchema = z.strictObject({
+  id: uuid.optional(),
+  body: z.string().trim().min(1, 'Write something first').max(8000),
+  parentId: uuid.optional(),
+});
+export type PostMessageInput = z.infer<typeof PostMessageSchema>;
+export const EditMessageSchema = z.strictObject({ body: z.string().trim().min(1).max(8000) });
+export const REACTION_EMOJI = ['👍', '❤️', '😄', '🎉', '👀', '✅', '🙏', '🔥'] as const;
+export const ReactionSchema = z.strictObject({ emoji: z.enum(REACTION_EMOJI) });
+
+export interface ChannelDto {
+  id: string;
+  workspaceId: string;
+  kind: 'public' | 'private' | 'dm';
+  /** Channel slug, or for direct messages the other people's names. */
+  name: string;
+  topic: string;
+  isMember: boolean;
+  role: 'member' | 'admin' | null;
+  memberCount: number;
+  members?: { id: string; name: string }[];
+  unread: number;
+  mentions: number;
+  lastMessageAt: string | null;
+  archived: boolean;
+}
+export interface MessageDto {
+  id: string;
+  channelId: string;
+  parentId: string | null;
+  author: { id: string; name: string };
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  deleted: boolean;
+  replyCount: number;
+  lastReplyAt: string | null;
+  reactions: { emoji: string; count: number; mine: boolean }[];
+}
+export interface ChatUnreadDto {
+  workspaceId: string;
+  unread: number;
+  mentions: number;
 }

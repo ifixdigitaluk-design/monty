@@ -55,7 +55,13 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
     if (!r) return;
     onClose();
     setQ('');
-    router.push(r.type === 'document' ? `/docs?ws=${r.workspaceId}&id=${r.id}` : `/project?id=${r.projectId}${r.taskId ? `&task=${r.taskId}` : ''}`);
+    router.push(
+      r.type === 'message'
+        ? `/chat?ws=${r.workspaceId}&c=${r.channelId}${r.parentId ? `&t=${r.parentId}` : ''}`
+        : r.type === 'document'
+          ? `/docs?ws=${r.workspaceId}&id=${r.id}`
+          : `/project?id=${r.projectId}${r.taskId ? `&task=${r.taskId}` : ''}`,
+    );
   }
 
   function onKey(e: KeyboardEvent) {

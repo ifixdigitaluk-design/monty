@@ -661,6 +661,102 @@ export const loginChallenges = pgTable('login_challenges', {
   usedAt: ts('used_at'),
 });
 
+// ---------- team chat ----------
+/** A conversation in a workspace: a public or private channel, or a direct message between up to 8 people. */
+export const channels = pgTable(
+  'channels',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    /** public | private | dm */
+    kind: text('kind').notNull(),
+    /** Lower-case slug for channels; null for direct messages. */
+    name: text('name'),
+    topic: text('topic').notNull().default(''),
+    /** For direct messages: sorted member ids joined with ',' (one conversation per set of people). */
+    dmKey: text('dm_key'),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    archivedAt: ts('archived_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'channels_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    uniqueIndex('channels_name_unique').on(t.workspaceId, t.name).where(sql`kind <> 'dm'`),
+    uniqueIndex('channels_dm_unique').on(t.workspaceId, t.dmKey).where(sql`kind = 'dm'`),
+    unique('channels_id_ws_unique').on(t.id, t.workspaceId),
+  ],
+);
+
+export const channelMembers = pgTable(
+  'channel_members',
+  {
+    id: pk(),
+    channelId: uuid('channel_id').notNull(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** member | admin (the creator; can rename, archive and remove people) */
+    role: text('role').notNull().default('member'),
+    joinedAt: createdAt(),
+    lastReadAt: ts('last_read_at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: 'channel_members_channel_fk', columns: [t.channelId, t.workspaceId], foreignColumns: [channels.id, channels.workspaceId] }).onDelete('cascade'),
+    unique('channel_members_unique').on(t.channelId, t.userId),
+    index('channel_members_user_idx').on(t.userId),
+  ],
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: pk(),
+    channelId: uuid('channel_id').notNull(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id),
+    /** Thread root this message replies to (null = top-level). */
+    parentId: uuid('parent_id'),
+    /** Markdown; mentions encoded as <@user-uuid>. */
+    body: text('body').notNull(),
+    replyCount: integer('reply_count').notNull().default(0),
+    lastReplyAt: ts('last_reply_at'),
+    createdAt: createdAt(),
+    editedAt: ts('edited_at'),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'messages_channel_fk', columns: [t.channelId, t.workspaceId], foreignColumns: [channels.id, channels.workspaceId] }).onDelete('cascade'),
+    index('messages_channel_idx').on(t.channelId, t.createdAt),
+    index('messages_parent_idx').on(t.parentId, t.createdAt),
+  ],
+);
+
+export const messageReactions = pgTable(
+  'message_reactions',
+  {
+    id: pk(),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    emoji: text('emoji').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique('message_reactions_unique').on(t.messageId, t.userId, t.emoji)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',

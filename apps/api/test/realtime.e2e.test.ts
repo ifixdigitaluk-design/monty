@@ -155,3 +155,29 @@ describe('realtime (SSE)', () => {
     await s.ended;
   });
 });
+
+describe('chat live events', () => {
+  it('public channel events reach the workspace; private channel events reach only its members', async () => {
+    const { owner, mia, org, wsId } = await team();
+    const vic = await signUp(app, 'Vic');
+    await query(`insert into organisation_memberships (organisation_id, user_id, role) values ($1, $2, 'MEMBER')`, [org.id, vic.user.id]);
+    await query(`insert into workspace_memberships (workspace_id, user_id, role) values ($1, $2, 'MEMBER')`, [wsId, vic.user.id]);
+    const pub = (await send(owner.agent, 'post', `/api/v1/workspaces/${wsId}/channels`, { name: 'general' })).body.channel;
+    const priv = (await send(owner.agent, 'post', `/api/v1/workspaces/${wsId}/channels`, { name: 'leads', private: true, memberIds: [mia.user.id] })).body.channel;
+    const sMia = await stream(await cookieOf(mia.agent), `/api/v1/workspaces/${wsId}/events`);
+    const sVic = await stream(await cookieOf(vic.agent), `/api/v1/workspaces/${wsId}/events`);
+    await sMia.waitFor((e) => e.event === 'ready');
+    await sVic.waitFor((e) => e.event === 'ready');
+
+    const secret = (await send(owner.agent, 'post', `/api/v1/channels/${priv.id}/messages`, { body: 'private news' })).body.message;
+    const open = (await send(owner.agent, 'post', `/api/v1/channels/${pub.id}/messages`, { body: 'public news' })).body.message;
+    const got = await sMia.waitFor((e) => e.event === 'chat' && e.data.messageId === secret.id);
+    expect(got.data).toMatchObject({ kind: 'message.created', channelId: priv.id });
+    expect(got.data).not.toHaveProperty('memberIds');
+    expect(JSON.stringify(got.data)).not.toContain('private news'); // pointers only
+    await sVic.waitFor((e) => e.event === 'chat' && e.data.messageId === open.id);
+    expect(sVic.events.some((e) => e.event === 'chat' && e.data.channelId === priv.id)).toBe(false);
+    sMia.close();
+    sVic.close();
+  });
+});

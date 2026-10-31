@@ -65,9 +65,10 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   );
 });
 
-export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...props }, ref) {
   return (
     <textarea
+      ref={ref}
       {...props}
       className={cx(
         'w-full rounded-lg border border-line bg-surface px-3 py-2 text-[14px] placeholder:text-muted focus:border-accent outline-none',
@@ -75,7 +76,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
       )}
     />
   );
-}
+});
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (

@@ -214,6 +214,8 @@ export class DataLifecycleService {
       await db.execute(sql`update tasks set assignee_id = null, version = version + 1 where assignee_id = ${userId}`);
       await db.execute(sql`update automation_rules set enabled = false where created_by_id = ${userId}`);
       await db.execute(sql`delete from workspace_memberships where user_id = ${userId}`);
+      await db.execute(sql`delete from channel_members where user_id = ${userId}`);
+      await db.execute(sql`delete from message_reactions where user_id = ${userId}`);
       await db.execute(sql`delete from organisation_memberships where user_id = ${userId}`);
       await db.execute(sql`delete from notifications where user_id = ${userId}`);
       await db.execute(sql`delete from invitations where lower(email) = lower(${user.email}) and accepted_at is null`);

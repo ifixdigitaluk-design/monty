@@ -21,7 +21,7 @@ async function axe(page: Page): Promise<Violation[]> {
 }
 const summary = (v: Violation[]) => v.map((x) => `${x.impact} ${x.id}: ${x.help} (${x.nodes.length}× e.g. ${x.nodes[0]?.target.join(' ')})`);
 
-test('no axe violations on the 13 main pages (desktop and phone width)', async ({ page }) => {
+test('no axe violations on the main pages (desktop and phone width)', async ({ page }) => {
   test.setTimeout(120_000);
   const results: Record<string, string[]> = {};
   await page.goto('/login');
@@ -55,6 +55,7 @@ test('no axe violations on the 13 main pages (desktop and phone width)', async (
     ['automations', ws.replace('/workspace?id=', '/automations?ws=')],
     ['sessions', '/settings/sessions'],
     ['account', '/settings/account'],
+    ['chat', `/chat?ws=${ws.split('id=')[1]}`],
   ];
   for (const [name, url] of pages) {
     await page.goto(url);

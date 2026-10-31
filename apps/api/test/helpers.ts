@@ -13,6 +13,10 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'message_reactions',
+  'messages',
+  'channel_members',
+  'channels',
   'login_challenges',
   'mfa_recovery_codes',
   'data_exports',

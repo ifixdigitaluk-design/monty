@@ -23,6 +23,9 @@ function describe(n: NotificationDto): string {
     return `Automation “${(n.data.ruleName as string) ?? 'rule'}”: ${(n.data.message as string) ?? ''}${n.data.title ? ` — “${n.data.title as string}”` : ''}`;
   }
   if (n.type === 'assigned') return `${who} assigned you “${task ?? 'a task'}”${project ? ` in ${project}` : ''}`;
+  if (n.type === 'mention' && n.entityType === 'message') {
+    return `${who} mentioned you in ${(n.data.channelName as string) ?? 'chat'}: “${(n.data.preview as string) ?? ''}”`;
+  }
   if (n.type === 'mention') return `${who} mentioned you${task ? ` on “${task}”` : project ? ` in ${project}` : ''}`;
   return `${who} commented on “${task ?? 'a task'}”`;
 }
@@ -47,6 +50,11 @@ function Inbox() {
   async function open(n: NotificationDto) {
     if (!n.readAt) await api.notifications.markRead([n.id]).catch(() => undefined);
     const taskId = n.entityType === 'task' ? n.entityId : ((n.data.taskId as string | null) ?? null);
+    if (n.entityType === 'message') {
+      const d = n.data as { workspaceId?: string; channelId?: string; threadId?: string | null };
+      router.push(`/chat?${d.workspaceId ? `ws=${d.workspaceId}&` : ''}c=${d.channelId}${d.threadId ? `&t=${d.threadId}` : ''}`);
+      return;
+    }
     if (n.projectId) router.push(`/project?id=${n.projectId}${taskId ? `&task=${taskId}` : ''}`);
   }
 
