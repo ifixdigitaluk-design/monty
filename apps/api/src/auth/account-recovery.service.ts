@@ -30,15 +30,16 @@ export class AccountRecoveryService {
     private readonly audit: AuditService,
   ) {}
 
-  private async issue(db: DbOrTx, userId: string, email: string, purpose: Purpose, ttlMs: number): Promise<string> {
+  private async issue(db: DbOrTx, userId: string, email: string, purpose: Purpose, ttlMs: number): Promise<{ token: string; id: string; expiresAt: Date }> {
     // Only the newest link of each kind works.
     await db
       .update(userTokens)
       .set({ usedAt: new Date() })
       .where(and(eq(userTokens.userId, userId), eq(userTokens.purpose, purpose), isNull(userTokens.usedAt)));
     const token = newSecret();
-    await db.insert(userTokens).values({ userId, purpose, email, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + ttlMs) });
-    return token;
+    const expiresAt = new Date(Date.now() + ttlMs);
+    const [row] = await db.insert(userTokens).values({ userId, purpose, email, tokenHash: hashToken(token), expiresAt }).returning({ id: userTokens.id });
+    return { token, id: row!.id, expiresAt };
   }
 
   /** Locks and validates a token inside the caller's transaction. */
@@ -59,11 +60,18 @@ export class AccountRecoveryService {
 
   // ---------- email verification ----------
 
+  /** Issues a verification link and queues the email in the same transaction (durable; retried if the provider is down). */
   async sendVerification(userId: string): Promise<boolean> {
     const user = await this.dbs.db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user || user.deletedAt || user.emailVerifiedAt) return false;
-    const token = await this.issue(this.dbs.db, user.id, user.email, 'EMAIL_VERIFICATION', VERIFY_TTL_MS);
-    return this.mail.send(verifyEmailEmail(user.email, user.name, this.mail.link(`/verify-email?token=${token}`)));
+    return this.dbs.db.transaction(async (tx) => {
+      const t = await this.issue(tx, user.id, user.email, 'EMAIL_VERIFICATION', VERIFY_TTL_MS);
+      return this.mail.enqueue(
+        verifyEmailEmail(user.email, user.name, this.mail.link(`/verify-email?token=${t.token}`)),
+        { idempotencyKey: `verify:${t.id}`, userId: user.id, expiresAt: t.expiresAt },
+        tx,
+      );
+    });
   }
 
   async verifyEmail(rawToken: string, client: ClientInfo): Promise<void> {
@@ -78,14 +86,20 @@ export class AccountRecoveryService {
 
   /**
    * Always resolves the same way. When the account exists, issues a token and emails it.
-   * The email is sent without awaiting so response time doesn't reveal whether the account exists.
+   * The email is queued (never sent inline), so response time doesn't depend on the provider.
    */
   async requestPasswordReset(input: RequestPasswordResetInput, client: ClientInfo): Promise<void> {
     const user = await this.dbs.db.query.users.findFirst({ where: eq(users.email, input.email) });
     if (!user || user.deletedAt) return;
-    const token = await this.issue(this.dbs.db, user.id, user.email, 'PASSWORD_RESET', RESET_TTL_MS);
+    await this.dbs.db.transaction(async (tx) => {
+      const t = await this.issue(tx, user.id, user.email, 'PASSWORD_RESET', RESET_TTL_MS);
+      await this.mail.enqueue(
+        passwordResetEmail(user.email, user.name, this.mail.link(`/reset-password?token=${t.token}`)),
+        { idempotencyKey: `reset:${t.id}`, userId: user.id, expiresAt: t.expiresAt },
+        tx,
+      );
+    });
     await this.audit.recordSafely({ actorId: user.id, action: 'auth.password_reset_requested', targetType: 'user', targetId: user.id, client });
-    void this.mail.send(passwordResetEmail(user.email, user.name, this.mail.link(`/reset-password?token=${token}`)));
   }
 
   /** Sets the new password, marks the email verified (the link proves inbox access) and signs out every session. */

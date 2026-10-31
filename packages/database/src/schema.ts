@@ -554,6 +554,58 @@ export const automationRuns = pgTable(
   (t) => [unique('automation_runs_idempotency').on(t.ruleId, t.eventKey), index('automation_runs_rule_idx').on(t.ruleId, t.createdAt)],
 );
 
+/**
+ * Durable outbound email queue (transactional outbox). Rows are inserted in the same transaction as the change that
+ * causes the email, so an email is never lost when the provider is down or the process restarts.
+ * The rendered message (it may contain one-time links) is encrypted at rest and wiped once delivery is final.
+ */
+export const emailOutbox = pgTable(
+  'email_outbox',
+  {
+    id: pk(),
+    /** Prevents queuing the same logical email twice (e.g. "verify:<token id>"). */
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    kind: text('kind').notNull(),
+    toAddress: text('to_address').notNull(),
+    /** Optional link to the recipient account so account deletion can erase queued mail. */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** AES-256-GCM encrypted JSON {subject,text,html}; null once delivery is final. */
+    payload: text('payload'),
+    /** PENDING → SENDING → SENT | (retry → PENDING) | FAILED (permanent or max attempts) | EXPIRED */
+    status: text('status').notNull().default('PENDING'),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull(),
+    nextAttemptAt: ts('next_attempt_at').notNull().defaultNow(),
+    /** Lease while SENDING; an expired lease (crashed worker) makes the row claimable again. */
+    lockedUntil: ts('locked_until'),
+    /** The link inside is useless after this time (e.g. password reset: 1 h), so don't send late. */
+    expiresAt: ts('expires_at'),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+    sentAt: ts('sent_at'),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [index('email_outbox_due_idx').on(t.status, t.nextAttemptAt), index('email_outbox_user_idx').on(t.userId)],
+);
+
+export const emailDeliveryAttempts = pgTable(
+  'email_delivery_attempts',
+  {
+    id: pk(),
+    emailId: uuid('email_id')
+      .notNull()
+      .references(() => emailOutbox.id, { onDelete: 'cascade' }),
+    attempt: integer('attempt').notNull(),
+    /** SENT | TEMPORARY_FAILURE | PERMANENT_FAILURE */
+    outcome: text('outcome').notNull(),
+    smtpCode: integer('smtp_code'),
+    error: text('error'),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('email_attempts_email_idx').on(t.emailId, t.attempt)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',

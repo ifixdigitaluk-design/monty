@@ -31,13 +31,15 @@ const lastMail = (to: string, kind: string) => {
   const all = mailbox.messages(to).filter((m) => m.kind === kind);
   return all[all.length - 1]!;
 };
-const settle = () => new Promise((r) => setTimeout(r, 50)); // reset emails are sent without awaiting
+/** Emails are queued durably and delivered by the worker; wait for the queue to empty. */
+const settle = () => app.get(MailService).drain();
 
 describe('email verification (B-05)', () => {
   it('sign-up sends a verification link that verifies the account once', async () => {
     const u = await signUp(app, 'Vera');
     expect((await u.agent.get('/api/v1/auth/me')).body.user.emailVerified).toBe(false);
 
+    await settle();
     const mail = lastMail(u.email, 'email_verification');
     expect(mail.subject).toBe('Confirm your email for Monty');
     const token = tokenFrom(mail.text, '/verify-email');
@@ -51,10 +53,12 @@ describe('email verification (B-05)', () => {
 
   it('resend issues a new link and invalidates the old one', async () => {
     const u = await signUp(app, 'Res');
+    await settle();
     const first = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
     const r = await send(u.agent, 'post', '/api/v1/auth/verify-email/resend');
     expect(r.status).toBe(202);
     expect(r.body).toEqual({ sent: true });
+    await settle();
     const second = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
     expect(second).not.toBe(first);
     expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token: first })).status).toBe(400);
@@ -65,6 +69,7 @@ describe('email verification (B-05)', () => {
 
   it('rejects expired and malformed tokens', async () => {
     const u = await signUp(app, 'Exp');
+    await settle();
     const token = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
     await query(`update user_tokens set expires_at = now() - interval '1 second'`);
     expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token })).status).toBe(400);
@@ -73,6 +78,7 @@ describe('email verification (B-05)', () => {
 
   it('only stores token hashes', async () => {
     const u = await signUp(app, 'Hash');
+    await settle();
     const token = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
     expect(await query('select 1 from user_tokens where token_hash = $1', [token])).toHaveLength(0);
   });
@@ -89,6 +95,7 @@ describe('password reset (B-06)', () => {
     expect(known.body).toEqual(unknown.body);
     await settle();
     expect(mailbox.messages('nobody@example.com')).toHaveLength(0);
+    await settle();
     expect(lastMail(u.email, 'password_reset').subject).toBe('Reset your Monty password');
   });
 
@@ -131,6 +138,7 @@ describe('password reset (B-06)', () => {
 
   it('a verification token cannot be used as a reset token', async () => {
     const u = await signUp(app, 'Mix');
+    await settle();
     const token = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
     const res = await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/password-reset/confirm', { token, password: 'new-password-123' });
     expect(res.status).toBe(400);
@@ -154,6 +162,7 @@ describe('invitation emails', () => {
     const org = (await send(owner.agent, 'post', '/api/v1/organisations', { name: 'Acme <script>' })).body.organisation;
     const inv = await send(owner.agent, 'post', `/api/v1/organisations/${org.id}/invitations`, { email: bob.email, role: 'MEMBER' });
     expect(inv.body.invitation.emailSent).toBe(true);
+    await settle();
     const mail = lastMail(bob.email, 'invitation');
     expect(mail.subject).toBe('Owner invited you to Acme <script> on Monty');
     expect(mail.html).toContain('Acme &lt;script&gt;'); // user-controlled names are escaped in HTML
@@ -172,11 +181,11 @@ describe('dev mailbox and config guards', () => {
   });
 
   it('production refuses to start without SMTP or with a non-https APP_URL', () => {
-    const base = { DATABASE_URL: 'postgresql://x', NODE_ENV: 'production' };
+    const base = { DATABASE_URL: 'postgresql://x', NODE_ENV: 'production', DATA_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64') };
     expect(() => loadConfig({ ...base, APP_URL: 'https://app.example.com' })).toThrow(/MAIL_TRANSPORT=smtp/);
     expect(() => loadConfig({ ...base, MAIL_TRANSPORT: 'smtp', SMTP_HOST: 'smtp.example.com', APP_URL: 'http://app.example.com' })).toThrow(/https/);
     expect(() => loadConfig({ ...base, MAIL_TRANSPORT: 'smtp' })).toThrow(/SMTP_HOST/);
-    expect(loadConfig({ ...base, MAIL_TRANSPORT: 'smtp', SMTP_HOST: 'smtp.example.com', APP_URL: 'https://app.example.com' }).mail.transport).toBe('smtp');
+    expect(loadConfig({ ...base, MAIL_TRANSPORT: 'smtp', SMTP_HOST: 'smtp.example.com', APP_URL: 'https://app.example.com', DATA_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64') }).mail.transport).toBe('smtp');
   });
 
   it('escapes HTML in templates', () => {

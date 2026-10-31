@@ -80,6 +80,17 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       for (const s of this.subscribers.values()) this.write(s, 'reset', { reason: 'server_reconnected' });
     });
     client.on('notification', (msg) => {
+      const extra = this.channels.get(msg.channel);
+      if (extra) {
+        for (const cb of extra) {
+          try {
+            cb(msg.payload ?? '');
+          } catch {
+            /* a consumer's failure must not affect others */
+          }
+        }
+        return;
+      }
       if (msg.channel !== 'monty_outbox' || !msg.payload) return;
       try {
         this.dispatch(JSON.parse(msg.payload) as RealtimeEvent);
@@ -90,7 +101,10 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     try {
       await client.connect();
       await client.query('LISTEN monty_outbox');
+      for (const ch of this.channels.keys()) await client.query(`LISTEN ${ch}`);
       this.listener = client;
+      // A reconnect may have missed notifications: let consumers catch up.
+      if (attempt > 0) for (const cbs of this.channels.values()) for (const cb of cbs) cb('');
     } catch (err) {
       this.logger.warn(JSON.stringify({ msg: 'listener_connect_failed', error: String(err) }));
       await client.end().catch(() => undefined);
@@ -99,6 +113,14 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   private readonly listeners: ((e: RealtimeEvent) => void)[] = [];
+  private readonly channels = new Map<string, ((payload: string) => void)[]>();
+
+  /** Subscribes to an additional Postgres NOTIFY channel on the shared listener connection. */
+  listen(channel: 'monty_mail', cb: (payload: string) => void) {
+    const first = !this.channels.has(channel);
+    this.channels.set(channel, [...(this.channels.get(channel) ?? []), cb]);
+    if (first && this.listener) void this.listener.query(`LISTEN ${channel}`).catch(() => undefined);
+  }
 
   /** In-process consumers of committed changes (e.g. the automation engine). Every instance receives every event. */
   onEvent(listener: (e: RealtimeEvent) => void) {

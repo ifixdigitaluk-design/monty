@@ -8,6 +8,8 @@ export const RETENTION = {
   expiredSessionDays: 30,
   usedTokenDays: 7,
   automationRunDays: 90,
+  /** Delivered/failed email metadata (no bodies: those are wiped on completion). */
+  finishedEmailDays: 30,
 } as const;
 const INTERVAL_MS = 60 * 60_000;
 const BATCH = 5_000;
@@ -54,6 +56,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
       sessions: await this.purge('sessions', sql`(expires_at < ${days(RETENTION.expiredSessionDays)}) or (revoked_at is not null and revoked_at < ${days(RETENTION.expiredSessionDays)})`),
       userTokens: await this.purge('user_tokens', sql`(used_at is not null and used_at < ${days(RETENTION.usedTokenDays)}) or expires_at < ${days(RETENTION.usedTokenDays)}`),
       automationRuns: await this.purge('automation_runs', sql`created_at < ${days(RETENTION.automationRunDays)}`),
+      emails: await this.purge('email_outbox', sql`status in ('SENT', 'FAILED', 'EXPIRED') and finished_at < ${days(RETENTION.finishedEmailDays)}`),
     };
     this.logger.log(JSON.stringify({ msg: 'maintenance_done', ...result }));
     return result;

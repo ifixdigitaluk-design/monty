@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Global, Inject, Injectable, Logger, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Global, Inject, Injectable, Logger, Module, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { createDb, Database, DbHandle, Transaction } from '@monty/database';
 import { AppConfig, CONFIG } from '../config';
@@ -17,7 +17,7 @@ interface RequestDbContext {
  * Services keep using `dbs.db`; it transparently returns the request's transaction when there is one.
  */
 @Injectable()
-export class DbService implements OnModuleInit, OnModuleDestroy {
+export class DbService implements OnModuleInit, OnApplicationShutdown {
   private readonly handle: DbHandle;
   private readonly als = new AsyncLocalStorage<RequestDbContext>();
   private readonly logger = new Logger('Db');
@@ -106,7 +106,8 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     await this.handle.close();
   }
 
-  async onModuleDestroy() {
+  /** Runs after every module's onModuleDestroy, so background workers can finish with the pool still open. */
+  async onApplicationShutdown() {
     await this.close();
   }
 }

@@ -350,8 +350,10 @@ export class MembersService {
       });
       const [inviter] = await this.dbs.db.select({ name: users.name }).from(users).where(eq(users.id, actorId));
       const invitePath = `/invite?token=${token}`;
-      const emailSent = await this.mail.send(
+      // Queued durably; `emailSent` now means "queued for delivery" (delivery is retried if the provider is down).
+      const emailSent = await this.mail.enqueue(
         invitationEmail(input.email, inviter?.name ?? 'A teammate', org.name, input.role, this.mail.link(invitePath)),
+        { idempotencyKey: `invite:${inv.id}`, expiresAt: inv.expiresAt },
       );
       return {
         ...this.toInvitationDto(inv, inviter?.name ?? '', workspaceName),

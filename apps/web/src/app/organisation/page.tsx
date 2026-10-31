@@ -252,9 +252,9 @@ function Invitations({ orgId, workspaces }: { orgId: string; workspaces: { id: s
           <div className="rounded-lg bg-surface-2 p-3" data-invite-link>
             <p className="text-[13px]">
               {link.emailSent ? (
-                <>We’ve emailed an invitation to <strong>{link.email}</strong>. You can also share this link directly. </>
+                <>An invitation email to <strong>{link.email}</strong> is on its way (we retry automatically if delivery is delayed). You can also share this link directly. </>
               ) : (
-                <>We couldn’t send the email. Send this link to <strong>{link.email}</strong> yourself. </>
+                <>An email for this invitation was already queued. You can also send this link to <strong>{link.email}</strong> yourself. </>
               )}
               It works once, only for that email address, and expires in 7 days. It won’t be shown again.
             </p>

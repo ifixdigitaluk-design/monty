@@ -11,6 +11,8 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'email_delivery_attempts',
+  'email_outbox',
   'automation_runs',
   'automation_rules',
   'ai_proposals',
