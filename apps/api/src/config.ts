@@ -36,6 +36,12 @@ const EnvSchema = z.object({
   MAIL_POLL_MS: z.coerce.number().int().min(50).default(2_000),
   /** 32 random bytes, base64. Encrypts queued emails and data exports at rest. Required in production. */
   DATA_ENCRYPTION_KEY: z.string().optional(),
+  /** Enables GET /api/v1/metrics for scrapers presenting `Authorization: Bearer <token>`. At least 24 characters. */
+  METRICS_TOKEN: z.string().min(24).optional().or(z.literal('').transform(() => undefined)),
+  /** Optional HTTPS endpoint receiving a JSON POST per unhandled server error (error-tracker intake). */
+  ERROR_WEBHOOK_URL: z.url().optional().or(z.literal('').transform(() => undefined)),
+  /** Version identifier shown in metrics and error reports (e.g. the git commit). */
+  RELEASE: z.string().max(100).default('dev'),
   /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
   REQUIRE_RLS: z.enum(['true', 'false']).optional(),
   /** 'local' = built-in deterministic planner (no data leaves the server); 'anthropic' needs AI_API_KEY and AI_MODEL. */
@@ -71,6 +77,9 @@ export interface AppConfig {
   };
   /** 32-byte key for encryption at rest. */
   dataKey: Buffer;
+  metricsToken?: string;
+  errorWebhookUrl?: string;
+  release: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -89,6 +98,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // A request transaction can be open while the AI provider answers (up to 30 s).
     throw new Error('Invalid environment: DB_IDLE_IN_TRANSACTION_TIMEOUT_MS must exceed 35000 (AI requests run inside a transaction for up to 30 s)');
   }
+  if (isProduction && e.ERROR_WEBHOOK_URL && !e.ERROR_WEBHOOK_URL.startsWith('https://')) throw new Error('Invalid environment: ERROR_WEBHOOK_URL must be https in production');
   if (isProduction && e.SMTP_TLS_REJECT_UNAUTHORIZED === 'false') throw new Error('Invalid environment: SMTP_TLS_REJECT_UNAUTHORIZED=false is not allowed in production');
   let dataKey: Buffer;
   if (e.DATA_ENCRYPTION_KEY) {
@@ -143,6 +153,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       pollMs: e.MAIL_POLL_MS,
     },
     dataKey,
+    metricsToken: e.METRICS_TOKEN,
+    errorWebhookUrl: e.ERROR_WEBHOOK_URL,
+    release: e.RELEASE,
   };
 }
 

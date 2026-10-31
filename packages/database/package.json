@@ -18,5 +18,9 @@
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",
     "drizzle-kit": "0.31.11"
-  }
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ]
 }

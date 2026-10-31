@@ -58,6 +58,11 @@ jobs:
           SOURCE_URL=$E2E_DATABASE_URL ADMIN_URL=postgresql://monty:monty_dev@localhost:5432/postgres \
           APP_ROLE_URL_TEMPLATE='postgresql://monty_app:monty_app_dev@localhost:5432/{db}' \
           bash infra/scripts/backup-restore-drill.sh
+      - name: Build production container images (official node base image)
+        run: |
+          docker build --target api -t monty-api:ci .
+          docker build --target web --build-arg API_INTERNAL_URL=http://api:4000 -t monty-web:ci .
+          docker run --rm --entrypoint id monty-api:ci | grep -q 'uid=10001'
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

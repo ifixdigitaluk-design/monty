@@ -8,6 +8,8 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 import { JsonLogger, requestLogging } from './common/logging';
 import { AppConfig, loadConfig, setConfig } from './config';
+import { ErrorReporter, setErrorReporter } from './observability/error-reporter';
+import { metrics } from './observability/metrics';
 import type { NextFunction, Request, Response } from 'express';
 
 /**
@@ -21,6 +23,7 @@ export function requestTimeout(ms: number, logger: { warn(message: string): void
     const timer = setTimeout(() => {
       if (res.headersSent) return;
       logger.warn(JSON.stringify({ msg: 'request_timeout', path: req.path, method: req.method, ms }));
+      metrics.inc('monty_request_timeouts_total');
       res.setHeader('Retry-After', '5');
       res.status(503).json({
         error: { code: 'REQUEST_TIMEOUT', message: 'This took too long. Refresh to check whether your change was saved before trying again.' },
@@ -55,6 +58,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<INe
   app.useBodyParser('json', { limit: '1mb' });
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
+  setErrorReporter(new ErrorReporter(config.errorWebhookUrl, { environment: config.nodeEnv, release: config.release }));
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableCors({
     origin: config.allowedOrigins,

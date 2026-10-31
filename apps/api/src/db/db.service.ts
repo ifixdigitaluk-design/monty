@@ -126,8 +126,9 @@ export class DbService implements OnModuleInit, OnApplicationShutdown {
   }
 
   /** Runs after every module's onModuleDestroy, so background workers can finish with the pool still open. */
-  async onApplicationShutdown() {
+  async onApplicationShutdown(signal?: string) {
     await this.close();
+    this.logger.log(JSON.stringify({ msg: 'shutdown_complete', signal: signal ?? null }));
   }
 }
 

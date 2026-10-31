@@ -1,6 +1,9 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { transientDbFailure } from './db-errors';
+import { errorReporter } from '../observability/error-reporter';
+import { metrics } from '../observability/metrics';
+import type { AuthedRequest } from './auth-context';
 
 const STATUS_CODES: Record<number, string> = {
   400: 'VALIDATION_FAILED',
@@ -49,6 +52,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const transient = transientDbFailure(exception);
     if (transient) {
       this.logger.warn(JSON.stringify({ msg: 'db_unavailable', reason: transient, requestId: req.headers['x-request-id'], path: req.path }));
+      metrics.inc('monty_db_unavailable_total', { reason: transient });
       if (!res.headersSent) {
         res.setHeader('Retry-After', '2');
         res
@@ -58,14 +62,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
-    this.logger.error(
-      JSON.stringify({
-        msg: 'unhandled_error',
-        requestId: req.headers['x-request-id'],
-        path: req.path,
-        error: exception instanceof Error ? { name: exception.name, message: exception.message, stack: exception.stack } : String(exception),
-      }),
-    );
+    const reporter = errorReporter();
+    const report = { error: exception, requestId: req.headers['x-request-id'] as string | undefined, path: req.path, method: req.method, userId: (req as AuthedRequest).auth?.userId, source: 'http' as const };
+    if (reporter) reporter.report(report);
+    else
+      this.logger.error(
+        JSON.stringify({
+          msg: 'unhandled_error',
+          requestId: report.requestId,
+          path: req.path,
+          error: exception instanceof Error ? { name: exception.name, message: exception.message, stack: exception.stack } : String(exception),
+        }),
+      );
+
     if (!res.headersSent) res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
   }
 }

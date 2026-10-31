@@ -2,6 +2,7 @@ import { LoggerService } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthedRequest } from './auth-context';
+import { metrics } from '../observability/metrics';
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
 type Level = keyof typeof LEVELS;
@@ -54,6 +55,9 @@ export function requestLogging(logger: JsonLogger) {
     const start = process.hrtime.bigint();
     res.on('finish', () => {
       const ms = Number(process.hrtime.bigint() - start) / 1e6;
+      const statusClass = `${Math.floor(res.statusCode / 100)}xx`;
+      metrics.inc('monty_http_requests_total', { method: req.method, status: statusClass });
+      if (!/\/events$/.test(req.path)) metrics.observe('monty_http_request_duration_seconds', { method: req.method }, ms / 1000);
       logger.log(
         JSON.stringify({
           msg: 'request',

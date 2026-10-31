@@ -7,6 +7,7 @@ import { decrypt, encrypt } from '../common/encryption';
 import { notFound } from '../common/errors';
 import { DbService } from '../db/db.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { trackJob } from '../observability/metrics';
 import { classifySendError, LogTransport, MailMessage, MailTransport, SmtpTransport } from './transports';
 
 const LEASE_MS = 2 * 60_000; // longer than the SMTP client's worst case (10 s connect + 10 s greeting + 20 s socket)
@@ -123,7 +124,7 @@ export class MailService implements OnModuleInit, OnModuleDestroy {
       this.rerun = true;
       return;
     }
-    this.running = this.processDue()
+    this.running = trackJob('mail_delivery', () => this.processDue())
       .catch((err) => {
         this.logger.error(JSON.stringify({ msg: 'mail_worker_failed', error: String(err).slice(0, 300) }));
         return 0;

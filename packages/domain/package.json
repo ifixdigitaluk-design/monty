@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "vitest": "3.2.7"
-  }
+  },
+  "files": [
+    "dist"
+  ]
 }

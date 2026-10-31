@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { sql } from 'drizzle-orm';
 import { DataLifecycleService } from '../account/data-lifecycle.service';
 import { DbService } from '../db/db.service';
+import { trackJob } from '../observability/metrics';
 
 /** Retention periods. Outbox events only need to outlive the longest client reconnect gap (replay window). */
 export const RETENTION = {
@@ -31,7 +32,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    this.timer = setInterval(() => void this.runNow().catch((err) => this.logger.error(JSON.stringify({ msg: 'maintenance_failed', error: String(err) }))), INTERVAL_MS);
+    this.timer = setInterval(() => void trackJob('maintenance', () => this.runNow()).catch((err) => this.logger.error(JSON.stringify({ msg: 'maintenance_failed', error: String(err) }))), INTERVAL_MS);
     this.timer.unref();
   }
 

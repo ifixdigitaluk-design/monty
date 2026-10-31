@@ -68,6 +68,9 @@ importers:
       nodemailer:
         specifier: 10.1.7
         version: 10.1.7
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -96,9 +99,6 @@ importers:
       '@types/supertest':
         specifier: 6.0.3
         version: 6.0.3
-      pg:
-        specifier: 8.23.1
-        version: 8.23.1
       smtp-server:
         specifier: 3.19.0
         version: 3.19.0

@@ -19,6 +19,7 @@ import { CollaborationService } from '../collaboration/collaboration.service';
 import { AppException, badRequest, conflict, notFound } from '../common/errors';
 import { DbService } from '../db/db.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { trackJob } from '../observability/metrics';
 import { TasksService } from '../tasks/tasks.service';
 import { AccessService } from '../tenancy/access.service';
 import { sendWebhook, WebhookSender } from './webhook';
@@ -86,7 +87,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.realtime.onEvent((e) => this.handle(e));
-    this.timer = setInterval(() => this.track(this.sweepOverdue().then(() => undefined)), SWEEP_MS);
+    this.timer = setInterval(() => this.track(trackJob('automation_overdue_sweep', () => this.sweepOverdue()).then(() => undefined)), SWEEP_MS);
     this.timer.unref();
   }
 
@@ -115,7 +116,7 @@ export class AutomationsService implements OnModuleInit, OnModuleDestroy {
   /** Called for every committed change (see RealtimeService.onEvent). */
   handle(e: RealtimeEvent) {
     if (e.topic !== 'task.created' && e.topic !== 'task.updated') return;
-    this.track(this.onTaskEvent(e));
+    this.track(trackJob('automation_events', () => this.onTaskEvent(e)));
   }
 
   private async onTaskEvent(e: RealtimeEvent) {

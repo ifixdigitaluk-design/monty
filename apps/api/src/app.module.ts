@@ -33,6 +33,7 @@ import { AutomationsController } from './automations/automations.controller';
 import { AutomationsService } from './automations/automations.service';
 import { DataLifecycleController } from './account/data-lifecycle.controller';
 import { DataLifecycleService } from './account/data-lifecycle.service';
+import { MetricsController } from './observability/metrics.controller';
 import { MaintenanceService } from './maintenance/maintenance.service';
 import { EntitlementsService } from './billing/entitlements.service';
 import { AccountRecoveryService } from './auth/account-recovery.service';
@@ -94,6 +95,7 @@ export class AppModule {
         AiController,
         AutomationsController,
         DataLifecycleController,
+        MetricsController,
         // Development-only mailbox: never registered in production or with a real mail provider.
         ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
       ],

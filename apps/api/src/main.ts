@@ -1,5 +1,14 @@
 import { createApp } from './app.factory';
 import { getConfig } from './config';
+import { errorReporter } from './observability/error-reporter';
+
+// Last-resort reporting: an unexpected rejection is reported and logged; an uncaught exception also ends the
+// process (state may be corrupt) so the orchestrator restarts it.
+process.on('unhandledRejection', (reason) => errorReporter()?.report({ error: reason, source: 'process' }));
+process.on('uncaughtException', (err) => {
+  errorReporter()?.report({ error: err, source: 'process' });
+  setTimeout(() => process.exit(1), 500).unref();
+});
 
 async function main() {
   const app = await createApp();

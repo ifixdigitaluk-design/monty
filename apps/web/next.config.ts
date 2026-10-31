@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { NextConfig } from 'next';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -19,6 +20,8 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Container builds (NEXT_OUTPUT=standalone) ship a self-contained server; local `next start` is unaffected.
+  ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' as const, outputFileTracingRoot: path.join(__dirname, '../..') } : {}),
   reactStrictMode: true,
   // Same-origin proxy so the session cookie stays first-party (ADR-004).
   async rewrites() {
