@@ -4,6 +4,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   date,
   doublePrecision,
   foreignKey,
@@ -498,6 +499,61 @@ export const aiProposals = pgTable(
   ],
 );
 
+export const automationRules = pgTable(
+  'automation_rules',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    name: text('name').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    trigger: text('trigger').notNull(),
+    /** Validated by AutomationRuleSchema in @monty/validation before it is stored. */
+    conditions: jsonb('conditions').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    actions: jsonb('actions').$type<Record<string, unknown>[]>().notNull(),
+    /** HMAC secret for webhook actions (generated server-side; shown to admins). */
+    webhookSecret: text('webhook_secret'),
+    /** Actions run with this user's permissions; if they lose access, the rule stops acting. */
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({
+      name: 'automation_rules_workspace_org_fk',
+      columns: [t.workspaceId, t.organisationId],
+      foreignColumns: [workspaces.id, workspaces.organisationId],
+    }).onDelete('cascade'),
+    index('automation_rules_ws_idx').on(t.workspaceId, t.trigger),
+  ],
+);
+
+export const automationRuns = pgTable(
+  'automation_runs',
+  {
+    id: pk(),
+    ruleId: uuid('rule_id')
+      .notNull()
+      .references(() => automationRules.id, { onDelete: 'cascade' }),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    /** Idempotency key: the triggering event (outbox id) or a synthetic key for time-based triggers. */
+    eventKey: text('event_key').notNull(),
+    taskId: uuid('task_id'),
+    status: text('status').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    error: text('error'),
+    createdAt: createdAt(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [unique('automation_runs_idempotency').on(t.ruleId, t.eventKey), index('automation_runs_rule_idx').on(t.ruleId, t.createdAt)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -555,3 +611,5 @@ export type Notification = typeof notifications.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type DocumentVersion = typeof documentVersions.$inferSelect;
 export type AiProposal = typeof aiProposals.$inferSelect;
+export type AutomationRule = typeof automationRules.$inferSelect;
+export type AutomationRun = typeof automationRuns.$inferSelect;

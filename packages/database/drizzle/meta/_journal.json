@@ -92,6 +92,20 @@
       "when": 1793435951140,
       "tag": "0012_org_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793436275801,
+      "tag": "0013_automations",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793436276538,
+      "tag": "0014_automations_rls",
+      "breakpoints": true
     }
   ]
 }

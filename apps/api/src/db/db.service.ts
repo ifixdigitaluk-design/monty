@@ -33,9 +33,11 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Runs `fn` in a transaction scoped to `userId` (RLS context). */
-  runAsUser<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  runAsUser<T>(userId: string, fn: () => Promise<T>, opts: { origin?: 'automation' } = {}): Promise<T> {
     return this.handle.db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+      // Marks every change made in this transaction (read back by recordChange) so automations don't trigger themselves.
+      if (opts.origin) await tx.execute(sql`select set_config('app.origin', ${opts.origin}, true)`);
       return this.als.run({ tx, userId }, fn);
     });
   }

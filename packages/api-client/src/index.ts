@@ -5,6 +5,10 @@
 import type {
   ActivityDto,
   AiProposalDto,
+  AutomationRuleDto,
+  AutomationRunDto,
+  CreateAutomationInput,
+  UpdateAutomationInput,
   CreateDocumentInput,
   DocumentDto,
   DocumentSummaryDto,
@@ -128,6 +132,14 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       proposals: (projectId: string) => request<{ proposals: AiProposalDto[] }>('GET', `/projects/${projectId}/ai/proposals`),
       apply: (id: string, taskIndexes: number[]) => request<{ proposal: AiProposalDto }>('POST', `/ai/proposals/${id}/apply`, { taskIndexes }),
       reject: (id: string) => request<void>('POST', `/ai/proposals/${id}/reject`),
+    },
+    automations: {
+      list: (workspaceId: string) => request<{ automations: AutomationRuleDto[] }>('GET', `/workspaces/${workspaceId}/automations`),
+      create: (workspaceId: string, input: CreateAutomationInput) =>
+        request<{ automation: AutomationRuleDto }>('POST', `/workspaces/${workspaceId}/automations`, input),
+      update: (id: string, input: UpdateAutomationInput) => request<{ automation: AutomationRuleDto }>('PATCH', `/automations/${id}`, input),
+      remove: (id: string) => request<void>('DELETE', `/automations/${id}`),
+      runs: (id: string) => request<{ runs: AutomationRunDto[] }>('GET', `/automations/${id}/runs`),
     },
     usage: (orgId: string) =>
       request<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> }>('GET', `/organisations/${orgId}/usage`),

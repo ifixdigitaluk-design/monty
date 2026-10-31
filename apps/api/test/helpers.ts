@@ -11,6 +11,8 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'automation_runs',
+  'automation_rules',
   'ai_proposals',
   'document_versions',
   'documents',

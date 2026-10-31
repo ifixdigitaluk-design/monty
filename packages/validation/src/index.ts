@@ -382,7 +382,7 @@ export interface CommentDto {
 
 export interface NotificationDto {
   id: string;
-  type: 'mention' | 'assigned' | 'comment';
+  type: 'mention' | 'assigned' | 'comment' | 'automation';
   entityType: string;
   entityId: string;
   projectId: string | null;
@@ -516,4 +516,97 @@ export interface AiProposalDto {
   createdAt: string;
   decidedAt: string | null;
   appliedEntityIds: string[];
+}
+
+// ---------- automations ----------
+export const AutomationTriggerEnum = z.enum(['task.created', 'task.updated', 'task.status_changed', 'task.overdue']);
+export type AutomationTrigger = z.infer<typeof AutomationTriggerEnum>;
+
+/** Webhook targets must be public HTTPS URLs; private/loopback addresses are additionally rejected at send time. */
+const webhookUrl = z
+  .url({ protocol: /^https$/, error: 'Webhook URL must start with https://' })
+  .max(2000)
+  .refine((u) => {
+    const host = (/^https:\/\/(?:[^@/]*@)?(\[[^\]]+\]|[^/:?#]+)/i.exec(u)?.[1] ?? '').toLowerCase();
+    return !(host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.local'));
+  }, 'Webhook URL must be a public address');
+
+export const AutomationActionSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('notify'),
+    to: z.array(z.union([z.literal('assignee'), z.literal('creator'), uuid])).min(1).max(20),
+    message: z.string().trim().min(1).max(500),
+  }),
+  z.strictObject({ type: z.literal('set_status'), status: TaskStatusEnum }),
+  z.strictObject({ type: z.literal('set_priority'), priority: PriorityEnum }),
+  z.strictObject({ type: z.literal('assign'), assigneeId: uuid.nullable() }),
+  z.strictObject({ type: z.literal('webhook'), url: webhookUrl }),
+]);
+export type AutomationAction = z.infer<typeof AutomationActionSchema>;
+
+export const AutomationConditionsSchema = z.strictObject({
+  projectId: uuid.optional(),
+  status: TaskStatusEnum.optional(),
+  priority: PriorityEnum.optional(),
+  /** null = unassigned */
+  assigneeId: uuid.nullable().optional(),
+  /** task.status_changed only: the status the task moved to. */
+  toStatus: TaskStatusEnum.optional(),
+});
+export type AutomationConditions = z.infer<typeof AutomationConditionsSchema>;
+
+const automationBase = {
+  name: name,
+  enabled: z.boolean().default(true),
+  trigger: AutomationTriggerEnum,
+  conditions: AutomationConditionsSchema.default({}),
+  actions: z.array(AutomationActionSchema).min(1).max(10),
+};
+const toStatusNeedsStatusTrigger = (r: { trigger?: AutomationTrigger; conditions?: AutomationConditions; actions?: AutomationAction[] }) =>
+  !(r.conditions?.toStatus && r.trigger !== 'task.status_changed');
+
+export const CreateAutomationSchema = z
+  .strictObject({ id: uuid.optional(), ...automationBase })
+  .refine(toStatusNeedsStatusTrigger, { message: '"Moved to status" only applies to the "status changed" trigger', path: ['conditions', 'toStatus'] });
+export type CreateAutomationInput = z.infer<typeof CreateAutomationSchema>;
+
+export const UpdateAutomationSchema = z
+  .strictObject({
+    expectedVersion: z.int().min(1),
+    name: name.optional(),
+    enabled: z.boolean().optional(),
+    trigger: AutomationTriggerEnum.optional(),
+    conditions: AutomationConditionsSchema.optional(),
+    actions: z.array(AutomationActionSchema).min(1).max(10).optional(),
+  })
+  .refine(toStatusNeedsStatusTrigger, { message: '"Moved to status" only applies to the "status changed" trigger', path: ['conditions', 'toStatus'] });
+export type UpdateAutomationInput = z.infer<typeof UpdateAutomationSchema>;
+
+export interface AutomationRuleDto {
+  id: string;
+  workspaceId: string;
+  name: string;
+  enabled: boolean;
+  trigger: AutomationTrigger;
+  conditions: AutomationConditions;
+  actions: AutomationAction[];
+  /** Present only when the rule has a webhook action; used to verify the X-Monty-Signature header. */
+  webhookSecret: string | null;
+  createdBy: { id: string; name: string };
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  lastRun: AutomationRunDto | null;
+}
+
+export interface AutomationRunDto {
+  id: string;
+  ruleId: string;
+  taskId: string | null;
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED';
+  attempts: number;
+  detail: Record<string, unknown>;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
 }

@@ -98,7 +98,21 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private readonly listeners: ((e: RealtimeEvent) => void)[] = [];
+
+  /** In-process consumers of committed changes (e.g. the automation engine). Every instance receives every event. */
+  onEvent(listener: (e: RealtimeEvent) => void) {
+    this.listeners.push(listener);
+  }
+
   private dispatch(e: RealtimeEvent) {
+    for (const l of this.listeners) {
+      try {
+        l(e);
+      } catch (err) {
+        this.logger.warn(JSON.stringify({ msg: 'listener_failed', error: String(err) }));
+      }
+    }
     for (const s of this.subscribers.values()) {
       if (s.workspaceId === e.workspaceId) this.write(s, 'change', e, e.id);
     }

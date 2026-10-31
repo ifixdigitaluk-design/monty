@@ -39,7 +39,9 @@ export async function recordChange(tx: DbOrTx, c: ChangeRecord): Promise<void> {
       topic: `${c.entityType}.${c.action}`,
       entityId: c.entityId,
       entityVersion: c.entityVersion,
-      payload: c.payload,
+      // _origin lets the automation engine ignore changes it caused itself (no loops); _changes lets it see what moved.
+      // Neither leaves the server: clients only receive the pointer built by toRealtimeEvent.
+      payload: sql`${JSON.stringify({ ...c.payload, ...(c.data?.changes ? { _changes: c.data.changes } : {}) })}::jsonb || jsonb_build_object('_origin', coalesce(nullif(current_setting('app.origin', true), ''), 'user'))`,
     })
     .returning({ id: outboxEvents.id, createdAt: outboxEvents.createdAt });
   // Postgres delivers NOTIFY only when the transaction commits, so listeners never see rolled-back changes.

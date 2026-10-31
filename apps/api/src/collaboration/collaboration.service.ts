@@ -23,11 +23,13 @@ export interface NotifyInput {
   organisationId: string;
   workspaceId: string;
   projectId: string;
-  type: 'mention' | 'assigned' | 'comment';
+  type: 'mention' | 'assigned' | 'comment' | 'automation';
   entityType: 'task' | 'comment';
   entityId: string;
   data: Record<string, unknown>;
   dedupeKey: string;
+  /** Automations notify on behalf of their author, who may also be a recipient. */
+  includeActor?: boolean;
 }
 
 @Injectable()
@@ -41,7 +43,7 @@ export class CollaborationService {
 
   /** Fans out a notification to recipients who can see the workspace (never to the actor). Idempotent by dedupeKey. */
   async notify(n: NotifyInput, db: DbOrTx = this.dbs.db): Promise<number> {
-    const unique = [...new Set(n.recipients)].filter((u) => u !== n.actorId);
+    const unique = [...new Set(n.recipients)].filter((u) => n.includeActor || u !== n.actorId);
     const allowed: string[] = [];
     for (const u of unique) if (await this.access.workspaceAccess(u, n.workspaceId, db)) allowed.push(u);
     if (allowed.length === 0) return 0;

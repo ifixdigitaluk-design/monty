@@ -19,6 +19,9 @@ function describe(n: NotificationDto): string {
   const who = n.actor?.name ?? 'Someone';
   const task = (n.data.taskTitle as string | null) ?? null;
   const project = (n.data.projectName as string | null) ?? null;
+  if (n.type === 'automation') {
+    return `Automation “${(n.data.ruleName as string) ?? 'rule'}”: ${(n.data.message as string) ?? ''}${n.data.title ? ` — “${n.data.title as string}”` : ''}`;
+  }
   if (n.type === 'assigned') return `${who} assigned you “${task ?? 'a task'}”${project ? ` in ${project}` : ''}`;
   if (n.type === 'mention') return `${who} mentioned you${task ? ` on “${task}”` : project ? ` in ${project}` : ''}`;
   return `${who} commented on “${task ?? 'a task'}”`;
