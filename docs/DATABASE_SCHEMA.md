@@ -28,6 +28,16 @@ User ─┬─< Session
 | `Invitation` (1b) | Pending org invitations | `tokenHash` unique (raw token never stored); partial unique index = one open invite per (org, email); composite FK keeps the optional workspace in the same org; 7-day expiry |
 | `UserToken` (1b) | Password-reset and email-verification tokens | `tokenHash` unique; purpose enum; bound to the email it was sent to; single use |
 | `AuditLog` (1b) | Security/admin events | `organisationId` null for account-level events (login, logout); indexed by org and actor |
+| `Milestone` (2) | Project milestones | per project; `version`; `completedAt`; tasks reference via `milestoneId` (set null on delete) |
+| `Comment` (2) | Task or project discussion | Markdown body; mentions as `<@uuid>`; soft delete |
+| `Notification` (2) | Inbox items | per recipient; unique `dedupeKey` per recipient makes fan-out idempotent |
+| `Document`, `DocumentVersion` (2) | Nested workspace docs + full history | `parentId` tree (cycle-checked), optional `projectId`; generated `tsvector` + GIN for search |
+| `AiProposal` (4) | AI suggestions awaiting a decision | stores input sent and validated output; status PENDING → APPLIED/REJECTED; `appliedEntityIds` |
+| `organisations.plan` (5) | Plan tier | enum FREE/PRO/TEAM/BUSINESS/ENTERPRISE; limits in `@monty/domain` `PLAN_LIMITS` |
+| `AutomationRule` (5) | Trigger → conditions → actions | composite FK to workspace; JSON validated by Zod before storage; `version`; soft delete; HMAC `webhookSecret` |
+| `AutomationRun` (5) | Execution log | unique (`ruleId`,`eventKey`) = idempotency claim; status, attempts, error, detail |
+
+Search: `projects`, `tasks` and `documents` carry a generated `search` tsvector column with a GIN index (migrations 0006, 0008).
 
 ## 3. Rules
 - All IDs are UUID v4 (client-supplied allowed on create for idempotency).
@@ -41,16 +51,19 @@ User ─┬─< Session
 ## 4. Planned tables
 | Phase | Tables |
 |---|---|
-| 2 | `Team`, `TeamMembership`, `Milestone`, `Label`, `TaskLabel`, `Comment`, `Mention`, `Attachment`, `Document`, `DocumentVersion`, `Notification`, `NotificationPreference`, `PropertyDefinition` + typed value tables, `SavedView` |
-| 3 | `DocumentYjsUpdate` (or snapshot+updates), `DeviceRegistration`, `SyncCursor` |
-| 4 | `AiConversation`, `AiProposal`, `AiAction`, `ReadinessRuleConfig` |
-| 5 | `AutomationRule`, `AutomationExecution`, `Integration`, `IntegrationToken` (encrypted), `Plan`, `Subscription`, `Entitlement`, `UsageCounter` |
+| 2 (remaining) | `Team`, `TeamMembership`, `Label`, `TaskLabel`, `Attachment`, `NotificationPreference`, `PropertyDefinition` + typed value tables, `SavedView` |
+| 3 (remaining) | `DocumentYjsUpdate` (or snapshot+updates), `DeviceRegistration`, `SyncCursor` |
+| 4 (remaining) | `AiConversation`, `AiAction`, `ReadinessRuleConfig` |
+| 5 (remaining) | `Integration`, `IntegrationToken` (encrypted), `Subscription`, `UsageCounter` (usage is currently counted live) |
 
 ## 5. Row-level security
-See ADR-009 and `drizzle/0003_row_level_security.sql`. RLS is enabled on workspaces, projects and tasks (per workspace), and on activity_events, outbox_events, invitations, task_dependencies and audit_logs (per organisation).
+See ADR-009 and `drizzle/0003_row_level_security.sql`. RLS is enabled on every table that carries `organisation_id` or `workspace_id` (16 tables), except the two membership tables that the policy helper functions read. A guard test (`rls.e2e`) fails if a new tenant table is added without RLS. Policies: migrations 0003, 0005, 0008, 0011, 0014.
 
 ## 6. Migrations
 `pnpm db:generate` (drizzle-kit) creates SQL from schema changes; the SQL is committed and reviewed; `pnpm db:migrate` applies it. Forward-only in production. Destructive changes use expand → migrate data → contract across releases.
 
-## 7. Backup & restore
-Managed Postgres with PITR (target RPO ≤ 15 min). Restore drill scripted and run in Phase 6 before launch.
+## 7. Retention (MaintenanceService, hourly)
+Outbox events 7 days (live-update replay window); expired/revoked sessions 30 days after expiry; used/expired email tokens 7 days; automation runs 90 days. Activity history and audit logs are never pruned automatically. Deletes run in batches of 5,000.
+
+## 8. Backup & restore
+Target: managed Postgres with PITR (RPO ≤ 15 min). Logical backup drill: `infra/scripts/backup-restore-drill.sh` (pg_dump custom format → restore into a scratch DB → compares every table's row count, RLS-enabled tables, policies and the migration journal, then checks that the restricted role sees nothing without a user context). Run here on 31 Oct 2026 against the dev database: passed (22 tables, 16 with RLS, 15 migrations). Also runs in CI after e2e. A PITR restore on the managed provider has **not** been exercised (no provider chosen).

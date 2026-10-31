@@ -40,6 +40,11 @@ pnpm e2e
 | `NODE_ENV` | all | `production` enables Secure cookies |
 | `API_INTERNAL_URL` | web | where Next.js rewrites `/api/*` (default `http://localhost:4000`). **Read at build time** — set it before `next build`. |
 | `LOG_LEVEL` | api | `info` default |
+| `DB_POOL_MAX` | api | Postgres connections per instance (default 10). Each authenticated request holds one for its whole duration (RLS transaction): size it ≥ expected concurrent requests per instance, and keep `instances × DB_POOL_MAX` below the server's `max_connections` (or use PgBouncer in transaction mode) |
+| `RATE_LIMIT`, `AUTH_RATE_LIMIT` | api | requests/min per IP (defaults 300 and 10). In memory per instance |
+| `TRUST_PROXY` | api | Express trust-proxy setting so client IPs are correct behind the load balancer |
+| `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL` | api | `local` (default, no network) or `anthropic` with key + model id |
+| `MONTY_URL` | desktop | web origin the desktop shell opens (https, or http://localhost for development) |
 
 ## Production (target, Stage 1)
 - **API**: container (`node apps/api/dist/main.js`), ≥2 replicas behind HTTPS load balancer. Run `node packages/database/dist/migrate-cli.js` (Drizzle migrator, forward-only) as a release step before rollout.
@@ -47,7 +52,7 @@ pnpm e2e
 - **Database**: managed PostgreSQL 16 with PITR, private network, TLS. Create `monty_app` with `infra/db/create-app-role.sql` **before** the first migration, so the migration grants it table access.
 - **Email**: verify your sending domain with the provider (SPF, DKIM, DMARC) before launch.
 - **Secrets**: provider secret manager; never in images.
-- **Observability**: JSON logs → log platform; health check `/api/v1/health`; error tracking and metrics added in Phase 6.
+- **Observability**: JSON logs → log platform; liveness `/api/v1/health`, readiness `/api/v1/health/ready` (503 when the DB or live-update listener is down). See RUNBOOKS.md for alerts to configure. No metrics endpoint or error tracker is integrated yet.
 - **Desktop**: Phase 3 — Tauri builds per OS in CI, code-signed (Apple Developer ID + notarisation; Windows Authenticode), updater manifests signed with Tauri updater key.
 
-This guide is updated each phase; Phase 6 delivers full runbooks (rollback, restore, incident response).
+Operational procedures (rollback, restore, incidents, secret rotation) are in RUNBOOKS.md.

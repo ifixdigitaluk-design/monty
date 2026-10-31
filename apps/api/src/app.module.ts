@@ -1,4 +1,5 @@
-import { Controller, DynamicModule, Get, Module } from '@nestjs/common';
+import { Controller, DynamicModule, Get, Module, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RequestContextInterceptor } from './db/request-context.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -30,19 +31,41 @@ import { AiController } from './ai/ai.controller';
 import { AiService } from './ai/ai.service';
 import { AutomationsController } from './automations/automations.controller';
 import { AutomationsService } from './automations/automations.service';
+import { MaintenanceService } from './maintenance/maintenance.service';
 import { EntitlementsService } from './billing/entitlements.service';
 import { AccountRecoveryService } from './auth/account-recovery.service';
 import { DevMailboxController, MailService } from './mail/mail.service';
 
 @Controller('health')
 class HealthController {
-  constructor(private readonly dbs: DbService) {}
+  constructor(
+    private readonly dbs: DbService,
+    private readonly realtime: RealtimeService,
+  ) {}
 
+  /** Liveness + database reachability (used by load balancers and the e2e harness). */
   @Public()
   @Get()
   async health() {
     await this.dbs.db.execute(sql`select 1`);
     return { status: 'ok', db: 'ok' };
+  }
+
+  /** Readiness: also requires the live-update listener, so an instance without it is taken out of rotation. */
+  @Public()
+  @Get('ready')
+  async ready(@Res({ passthrough: true }) res: Response) {
+    const started = Date.now();
+    let db = 'ok';
+    try {
+      await this.dbs.db.execute(sql`select 1`);
+    } catch {
+      db = 'down';
+    }
+    const { listening } = this.realtime.stats();
+    const ok = db === 'ok' && listening;
+    res.status(ok ? 200 : 503);
+    return { status: ok ? 'ok' : 'degraded', db, realtime: listening ? 'ok' : 'down', checkMs: Date.now() - started };
   }
 }
 
@@ -84,6 +107,7 @@ export class AppModule {
         RealtimeService,
         AiService,
         AutomationsService,
+        MaintenanceService,
         EntitlementsService,
         AccessService,
         OrganisationsService,

@@ -1,6 +1,6 @@
 # Security Plan
 
-No compliance or certification is claimed. Items marked ✅ are implemented in the Phase 1 slice and covered by tests; others are planned.
+No compliance or certification is claimed. Items marked ✅ are implemented and covered by automated tests; others are planned. No external security review or penetration test has been performed.
 
 ## 1. Authentication & sessions
 - ✅ Argon2id password hashing (`@node-rs/argon2`), minimum 10 characters, max 200.
@@ -29,7 +29,7 @@ No compliance or certification is claimed. Items marked ✅ are implemented in t
 - ✅ Helmet security headers on API; Next.js headers (CSP, frame-ancestors none, referrer policy) on web.
 - ✅ Input validation with Zod on every body; unknown fields rejected.
 - ✅ Output encoding: React escapes by default; no `dangerouslySetInnerHTML`.
-- ✅ Rate limiting (Nest throttler), stricter on auth.
+- ✅ Rate limiting (Nest throttler), stricter on auth. In memory per instance and keyed by IP: users behind one NAT share limits (seen in the load test on search, 120/min), and limits don't add up across instances. A shared store (Redis) is needed before horizontal scaling.
 - Planned: CSP nonces once editor embeds arrive.
 
 ## 4. Data protection
@@ -40,10 +40,17 @@ No compliance or certification is claimed. Items marked ✅ are implemented in t
 - Logs exclude passwords, tokens, document content.
 
 ## 5. AI security (Phase 4)
-- Retrieval filtered by the same permission function before any content reaches a model.
-- Workspace content is wrapped as untrusted data; system instructions are never derived from it; tool calls validated by schema and permission.
-- Destructive/external actions require explicit user approval; all AI actions audited with before/after.
-- No customer data used for model training; provider DPAs reviewed.
+- ✅ Context sent to a provider is limited to the requesting user's permitted project (permission check before assembly).
+- ✅ Workspace content is wrapped in `<project_data>` and declared untrusted in the system prompt; provider output must match a strict Zod schema (unknown fields, bad indexes and oversize values rejected).
+- ✅ Nothing changes without approval: output is stored as a PENDING proposal; applying is permission-checked, row-locked (no double apply) and audited (`ai.plan_proposed/applied/rejected`).
+- ✅ Default provider is a local deterministic planner, so no data leaves the server unless `AI_PROVIDER=anthropic` is configured.
+- Not verified: behaviour against the real Anthropic API (no key in this environment); red-team prompt-injection suite.
+- Before enabling a hosted provider: review its data-processing terms (training opt-out, retention, region).
+
+## 5b. Automations and webhooks (Phase 5)
+- ✅ Only workspace admins create rules; rules act as their author and are skipped if the author is no longer an admin.
+- ✅ Automation-made changes are tagged in the database transaction (`app.origin`) and never re-trigger rules (no loops); runs are idempotent per (rule, event).
+- ✅ Webhooks: HTTPS only; destination IPs checked at connect time against private, loopback, link-local, CGNAT, multicast and documentation ranges (IPv4 and IPv6, incl. IPv4-mapped), which also blocks DNS rebinding; no redirects; 5 s timeout; HMAC-SHA256 signature with timestamp. Webhook secrets are visible only to workspace admins.
 
 ## 6. Audit
 - ✅ Product activity events for project/task changes.
@@ -55,4 +62,4 @@ No compliance or certification is claimed. Items marked ✅ are implemented in t
 UK GDPR / EU GDPR (lawful basis, DPA, sub-processors, data residency options), US state privacy laws, accessibility obligations. Requires qualified legal advice; not decided here.
 
 ## 8. Testing
-Permission matrix unit tests; cross-tenant e2e; dependency audit (`pnpm audit`) in CI; external penetration test before GA (Phase 6).
+Permission matrix unit tests; cross-tenant e2e; RLS guard test; SSRF unit tests; dependency audit (`pnpm audit --prod`, clean on 31 Oct 2026). **Required before GA, not done**: external penetration test, review of the CSP (`'unsafe-inline'` remains for Next.js scripts), and a decision on sign-up enumeration.

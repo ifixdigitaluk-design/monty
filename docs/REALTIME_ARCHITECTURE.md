@@ -1,4 +1,4 @@
-# Realtime Architecture (Phase 3 design; foundations in Phase 1)
+# Realtime Architecture
 
 ## 1. Data classes and strategies
 | Class | Examples | Store | Conflict strategy | Transport |
@@ -43,3 +43,17 @@ REST write ─txn─► Postgres (row + OutboxEvent)
 
 ## 6. Tests required
 Two-client propagation, reconnection after forced disconnect, duplicate event delivery, stale-write rejection, permission revocation mid-session.
+
+
+## 7. As implemented (Phase 3, updated Phase 5)
+- **Transport**: Server-Sent Events at `GET /workspaces/:id/events` (not WebSockets: one-way server→client is all task/doc updates need, works through proxies, reconnects natively). Writes stay ordinary REST calls.
+- **Fan-out**: `recordChange` writes the outbox row and calls `pg_notify('monty_outbox', pointer)` in the same transaction, so only committed changes are announced and every API instance receives every event without an extra broker.
+- **Pointers, not data**: events carry topic, entity id, version and actor. Clients refetch through the permission-checked API.
+- **Replay**: `Last-Event-ID` → up to 500 missed events re-read under the user's RLS context; otherwise `reset` (client refetches everything).
+- **Access re-check** every 60 s: revoked sessions and removed members are disconnected (`revoked`).
+- **Presence**: per project, in memory per instance. **Limitation**: with several instances, viewers on other instances are not shown — needs a shared store.
+- **In-process consumers**: `RealtimeService.onEvent` feeds the automation engine. The outbox payload (never sent to clients) carries `_origin` (`user` or `automation`, from the transaction-local `app.origin` setting) and `_changes` so the engine can match `status_changed` rules and ignore its own changes.
+- **Limitation**: automations consume live notifications; events committed while no API instance is listening are not processed later (overdue rules catch up on the next sweep). A durable relay reading `outbox_events` would close this gap.
+- **Retention**: outbox rows are deleted after 7 days by MaintenanceService; a client offline longer than that gets `reset`.
+- **Readiness**: `/health/ready` returns 503 if the LISTEN connection is down, so a load balancer can drain that instance.
+- Not implemented: Yjs collaborative editing (documents use optimistic versioning with conflict errors), desktop offline queue.

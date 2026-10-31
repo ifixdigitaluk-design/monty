@@ -1,6 +1,6 @@
 # Development Status (master record)
 
-Last updated: 31 Oct 2026 · Session 3 · Phase 1b complete except Redis rate limiting (email, password reset, email verification, Postgres RLS).
+Last updated: 31 Oct 2026 · Session 4 · Phases 2–6 built in part (see roadmap status column). Nothing is Production Ready.
 
 ## Status definitions
 - **Implemented**: code exists and builds.
@@ -39,8 +39,24 @@ Implementation status and verification status are recorded separately below.
 | B-06 | Password reset (enumeration-safe, single-use, revokes sessions) | Implemented | Verified | 5 API tests; Playwright incl. second-device sign-out |
 | B-03 | Postgres row-level security; API runs as restricted role; refuses to start if RLS is ineffective | Implemented | Verified | 9 RLS tests (SQL-level and simulated missing check); every API and Playwright test now runs as the restricted role |
 | B-02 UI | Members & settings page (members, invitations, audit tabs), workspace "Manage access", /invite page | Implemented | Verified | Playwright; screenshots reviewed |
+| C-01 | Milestones (progress, complete, detach on delete) | Implemented | Verified | collaboration.e2e; Playwright collaboration flow |
+| C-02 | Task dependencies (same project, cycle detection, readiness rule `dependencies_ordered`) | Implemented | Verified | domain cycle tests; API; Playwright |
+| C-03 | Comments + @mentions (task and project), safe Markdown rendering | Implemented | Verified | API; Playwright |
+| C-04 | Notifications inbox (assigned, mention, comment, automation), idempotent fan-out | Implemented | Verified | API; Playwright |
+| D-01 | Documents: nested, linked to projects, version history + restore, conflict detection | Implemented | Verified | documents.e2e; Playwright |
+| K-01 | Search (Postgres FTS, prefix, highlights, permission-filtered) + Ctrl K palette | Implemented | Verified | insights.e2e; Playwright |
+| K-02 | Calendar (tasks, milestones, targets) and Home dashboard | Implemented | Verified | insights.e2e; Playwright |
+| R-01 | Live updates over SSE (LISTEN/NOTIFY, replay, reset, access re-check) + presence | Implemented | Verified | realtime.e2e (two clients, replay, revocation); Playwright two-browser test |
+| DT-01 | Tauri 2 desktop shell (origin allowlist, offline fallback page) | Implemented | Tested on Linux only | release build + Rust unit test + Xvfb screenshot. **Windows/macOS builds, signing, auto-update not verified** |
+| AI-01 | AI project planning: provider abstraction (local planner default, Anthropic optional), strict output validation, approval, audit | Implemented | Verified (local planner) | ai.e2e incl. fake-fetch Anthropic tests; Playwright. **Real Anthropic API not called** (no key) |
+| S-01 | Entitlements: plan tiers, central limits, usage endpoint, 403 PLAN_LIMIT_REACHED, plan & usage tab | Implemented | Verified | API; Playwright. Limits are placeholders; **no pricing, no payment provider** |
+| S-02 | Automations: triggers, conditions, actions (notify, status, priority, assign, signed webhook), builder UI, run history | Implemented | Verified | automations.e2e (14 tests: idempotency, no loops, author permission re-check, retries, SSRF); Playwright builder flow |
+| O-01 | Retention jobs, readiness probe, configurable DB pool | Implemented | Tested | operations.e2e |
+| O-02 | Load test script + baseline | Implemented | Executed | RUNBOOKS §7 (single 2-vCPU host) |
+| O-03 | Backup/restore drill script (also in CI) | Implemented | Executed locally | RUNBOOKS §4; CI step not yet run |
+| O-04 | Runbooks, alert definitions, launch checklist | Written | n/a | RUNBOOKS.md |
 
-Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, milestones, dependencies API, comments, attachments, documents and editor, search, notifications, realtime, desktop, AI, automation, billing, integrations, analytics.
+Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, labels, attachments, custom fields, saved views, user databases, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
 
 ## Session 1 report
 
@@ -151,3 +167,58 @@ Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, 
     - Connect GitHub and run CI.
     - Choose an email provider and add its credentials, then send one real test email.
     - Then Phase 2: milestones, dependencies, comments, documents.
+
+## Session 4 report (Phases 2–6, autonomous run)
+
+1. **Inspected**: GitHub is still not connected to this session, so nothing has been pushed and CI has never run. Postgres stopped several times while idle (restarted each time; data intact). There's no AI key, SMTP credentials, payment provider, or Windows/macOS machine here.
+2. **Developed** (one commit per batch):
+   - Phase 2a: milestones, dependencies (cycle-safe), comments, mentions, notifications inbox.
+   - Phase 2b: full-text search with Ctrl K palette, calendar, Home dashboard.
+   - Phase 2c: documents with nesting, history, restore and safe Markdown (`@monty/editor`).
+   - Phase 3: live updates over SSE with Postgres LISTEN/NOTIFY, replay, presence; Tauri 2 desktop shell.
+   - Phase 4: AI planning with human approval (local planner by default, Anthropic provider optional).
+   - Phase 5: entitlements with placeholder plan limits; automation engine and builder UI.
+   - Phase 6: retention jobs, readiness probe, configurable pool, load test, backup/restore drill, runbooks.
+3. **Files changed**: migrations 0004–0014. New API modules `collaboration`, `insights`, `documents`, `realtime`, `ai`, `billing`, `automations`, `maintenance`. New web pages `inbox`, `calendar`, `home`, `docs`, `automations`. Also `packages/editor`, `apps/desktop`, `infra/scripts/{load-test.mjs,backup-restore-drill.sh}`, `docs/RUNBOOKS.md`, and updates to the API spec, schema, security, realtime, deployment and roadmap docs.
+4. **Functional**: rows C-01 … O-04 above, at the verification level stated in each row.
+5. **Tests executed** (31 Oct 2026, this environment):
+   - `pnpm build`, `pnpm typecheck` and `pnpm lint` → exit 0
+   - `pnpm test` → domain 40/40, validation 8/8, editor 2/2, API 120/120 (13 files, run as the restricted role)
+   - `pnpm e2e` → 15/15 passed, 1 screenshot helper skipped by design
+   - Desktop: `cargo build --release` and `cargo test` on Linux; smoke screenshot under Xvfb
+   - Load test (2 runs) and backup/restore drill — results in RUNBOOKS.md
+   - `pnpm audit --prod` → clean
+6. **Passed**: all of the above.
+7. **Failed during the session and fixed**:
+   - Search union type mismatch.
+   - Desktop fallback directory was git-ignored.
+   - DB pool double-close on failed startup.
+   - Lint errors in the search palette.
+   - The web build has to be made with `API_INTERNAL_URL` set for e2e (operator error, documented).
+   - Load test found search throttled by the per-IP limit. This is expected behaviour; documented as a risk.
+8. **Incomplete / unverified**:
+   - GitHub push and CI.
+   - Real SMTP delivery.
+   - Real Anthropic API call.
+   - Payments.
+   - OAuth integrations.
+   - Windows/macOS desktop builds, code signing and auto-update.
+   - PITR restore on a managed provider.
+   - Monitoring stack.
+   - External penetration test.
+   - Legal review.
+   - Pricing.
+9. **Risks**:
+   - **Single-instance assumptions**: presence and rate limits are per instance in memory, and automations miss events while no instance is listening.
+   - **Pool sizing**: request-wide RLS transactions make pool size the main scaling knob.
+   - **CSP** still allows `'unsafe-inline'`.
+   - **Sign-up enumeration**: sign-up still reveals whether an email is registered.
+   - **Webhook secret rotation** requires recreating the rule.
+   - **Unreviewed decisions**: Drizzle instead of Prisma (ADR-013) and SSE instead of WebSockets still need founder review.
+10. **Next**:
+    - Connect GitHub, push, and get CI green.
+    - Choose providers for email, AI, payments, hosting and error tracking.
+    - Shared Redis for rate limits and presence.
+    - Durable outbox relay for automations.
+    - Windows/macOS desktop builds with signing.
+    - Pen test and legal review before any launch.

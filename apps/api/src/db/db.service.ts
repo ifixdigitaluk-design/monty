@@ -23,7 +23,7 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('Db');
 
   constructor(@Inject(CONFIG) private readonly config: AppConfig) {
-    this.handle = createDb(config.databaseUrl);
+    this.handle = createDb(config.databaseUrl, { max: config.dbPoolMax });
   }
 
   get db(): Database {

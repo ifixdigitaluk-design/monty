@@ -58,8 +58,51 @@ Base path `/api/v1`. JSON. Contracts are the Zod schemas in `packages/validation
 | PUT | `/workspaces/:id/members/:userId` | workspace Admin | `{role}`. Target must be an org member (400 otherwise) |
 | DELETE | `/workspaces/:id/members/:userId` | workspace Admin | Remove explicit workspace access |
 
-## Planned
-Phase 2: invitation emails, teams, milestones, dependencies, comments, attachments (pre-signed S3 URLs), documents, search, notifications, saved views.
-Phase 3: `/realtime` WebSocket (subscribe by workspace; events carry `eventId` for de-duplication), desktop token exchange via deep link.
-Phase 4: `/ai/*` (conversations, proposals, approve/reject), readiness rule configuration.
-Phase 5: automations, integrations (OAuth callbacks), billing webhooks, public REST tokens.
+### Phase 2 — collaboration, documents, insights
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET/POST | `/projects/:id/milestones` | read / task.create | `{name, dueDate?, description?}` |
+| PATCH/DELETE | `/milestones/:id` | task.update | `expectedVersion`; `completed: true` stamps `completedAt`; delete detaches tasks |
+| GET | `/projects/:id/dependencies` | read | |
+| POST | `/tasks/:id/dependencies` | task.update | `{dependsOnTaskId}`; same project only; cycles rejected (400) |
+| DELETE | `/tasks/:id/dependencies/:depId` | task.update | |
+| GET/POST | `/projects/:id/comments`, `/tasks/:id/comments` | read / comment | Markdown body; `<@uuid>` mentions notify members who can see the workspace |
+| DELETE | `/comments/:id` | author or admin | soft delete |
+| GET | `/me/notifications?unread=1` | self | types: `mention`, `assigned`, `comment`, `automation` |
+| POST | `/me/notifications/read` | self | `{ids?}` (omit = all) |
+| GET | `/search?q=` | accessible workspaces | Postgres FTS over projects, tasks, documents; highlights as `[[ ]]`; 120/min per IP |
+| GET | `/calendar?from&to&mine` | accessible workspaces | tasks, milestones, project targets |
+| GET | `/me/home` | self | overdue, due soon, at-risk projects, recent activity |
+| GET/POST | `/workspaces/:id/documents` | read / doc.create | nested via `parentId`, optional `projectId` |
+| GET/PATCH/DELETE | `/documents/:id` | read / update | optimistic `expectedVersion`; every save snapshots a version |
+| GET | `/documents/:id/versions` | read | |
+| POST | `/documents/:id/versions/:versionId/restore` | update | restoring creates a new version (history is never rewritten) |
+
+### Phase 3 — live updates
+| GET | `/workspaces/:id/events?projectId=` | read | Server-Sent Events: `ready`, `change` (pointer: topic, entityId, version, actorId), `presence`, `reset`, `revoked`. Honors `Last-Event-ID` (replay ≤ 500). |
+
+### Phase 4 — AI (human approval required)
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/ai/status` | signed in | which provider is active (`local` or `anthropic`) |
+| POST | `/projects/:id/ai/plan` | task.create, plan limit | `{guidance?}` → PENDING proposal; nothing changes; 20/min |
+| GET | `/projects/:id/ai/proposals` | read | |
+| POST | `/ai/proposals/:id/apply` | task.create | `{taskIndexes}`; locked + audited; creates tasks and dependencies; 409 if already decided |
+| POST | `/ai/proposals/:id/reject` | task.create | |
+
+### Phase 5 — entitlements and automations
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/organisations/:id/usage` | org member | plan, limits (placeholders, no prices), usage. Over-limit actions return 403 `PLAN_LIMIT_REACHED` |
+| GET/POST | `/workspaces/:id/automations` | workspace.manage, plan limit | trigger `task.created/updated/status_changed/overdue`; conditions `projectId, status, priority, assigneeId, toStatus`; actions `notify, set_status, set_priority, assign, webhook(https)` |
+| PATCH/DELETE | `/automations/:id` | workspace.manage | `expectedVersion`; editor becomes the rule's author (runs with their permissions) |
+| GET | `/automations/:id/runs` | workspace.manage | last 50 runs: `SUCCEEDED/FAILED/SKIPPED/RUNNING`, attempts, error |
+
+Webhook requests: `POST` JSON `{event, rule, task, runId}` with `X-Monty-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "t.body")>`. 5 s timeout, no redirects, private/loopback/link-local destinations refused at connect time.
+
+### Phase 6 — operations
+| GET | `/health` | public | liveness + DB |
+| GET | `/health/ready` | public | 503 unless DB and the live-update listener are both up |
+
+## Not implemented (planned)
+Attachments (pre-signed object storage), saved views, custom fields, user databases, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.

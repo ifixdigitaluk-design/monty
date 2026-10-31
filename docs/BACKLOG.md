@@ -31,3 +31,18 @@ Milestones · Dependencies (API + UI + cycle detection) · Labels · Comments & 
 
 ## Phase 3+ epics
 See PRODUCT_ROADMAP.md.
+
+## Status after session 4 (31 Oct 2026)
+Done and verified: Phase 1, Phase 1b (except B-07 Redis rate limiting, B-10 email retry queue), Phase 2 milestones/dependencies/comments/mentions/notifications/documents/search/calendar/home, Phase 3 SSE live updates + presence + Linux desktop shell, Phase 4 AI plan proposals with approval, Phase 5 entitlements + automations, Phase 6 retention/readiness/load test/restore drill/runbooks.
+
+Open, in priority order:
+1. Push to GitHub; CI green (blocked: repository access).
+2. Provider decisions + credentials: SMTP, AI, payments, hosting, error tracking.
+3. Redis: shared rate limits and presence (needed before >1 API instance).
+4. Durable outbox relay (automations and future integrations survive restarts).
+5. Labels, attachments (object storage), custom fields, saved views.
+6. MFA (TOTP/WebAuthn); sign-up enumeration fix; CSP nonces.
+7. Desktop: Windows/macOS builds, signing, updater, deep-link auth, offline cache.
+8. AI: assistant chat, summaries, risk detection, red-team prompt-injection suite.
+9. Billing provider integration (after pricing is decided by the founder).
+10. Integrations: GitHub, Google, Slack (OAuth, encrypted tokens).

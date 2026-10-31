@@ -49,6 +49,15 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @monty/e2e exec playwright install --with-deps chromium
       - run: pnpm e2e
+      - name: Backup/restore drill (dump the e2e database, restore, verify counts, RLS and migrations)
+        run: |
+          # pg_dump must be >= the server version (16); the runner's default client may be older.
+          sudo apt-get install -y postgresql-common >/dev/null && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y postgresql-client-16 >/dev/null
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          SOURCE_URL=$E2E_DATABASE_URL ADMIN_URL=postgresql://monty:monty_dev@localhost:5432/postgres \
+          APP_ROLE_URL_TEMPLATE='postgresql://monty_app:monty_app_dev@localhost:5432/{db}' \
+          bash infra/scripts/backup-restore-drill.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

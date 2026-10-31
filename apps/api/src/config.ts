@@ -6,6 +6,8 @@ const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** Postgres connections per API instance. Each authenticated request holds one for its duration (RLS transaction). */
+  DB_POOL_MAX: z.coerce.number().int().min(2).max(200).default(10),
   RATE_LIMIT: z.coerce.number().int().positive().default(300),
   AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
   TRUST_PROXY: z.string().default('loopback'),
@@ -31,6 +33,7 @@ export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   isProduction: boolean;
   databaseUrl: string;
+  dbPoolMax: number;
   port: number;
   allowedOrigins: string[];
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -66,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     nodeEnv: e.NODE_ENV,
     isProduction,
     databaseUrl: e.DATABASE_URL,
+    dbPoolMax: e.DB_POOL_MAX,
     port: e.API_PORT,
     allowedOrigins: e.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
     logLevel: e.LOG_LEVEL,
