@@ -120,6 +120,20 @@
       "when": 1793441969245,
       "tag": "0016_email_outbox_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793442733716,
+      "tag": "0017_data_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793442734683,
+      "tag": "0018_data_lifecycle_rls",
+      "breakpoints": true
     }
   ]
 }

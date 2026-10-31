@@ -6,6 +6,10 @@ import type {
   ActivityDto,
   AiProposalDto,
   AutomationRuleDto,
+  CreatedDataExportDto,
+  DataExportDto,
+  DeletionBlockerDto,
+  PendingOrganisationDeletionDto,
   AutomationRunDto,
   CreateAutomationInput,
   UpdateAutomationInput,
@@ -119,8 +123,20 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       verifyEmail: (token: string) => request<void>('POST', '/auth/verify-email', { token }),
       resendVerification: () => request<{ sent: boolean }>('POST', '/auth/verify-email/resend'),
     },
+    account: {
+      exports: () => request<{ exports: DataExportDto[] }>('GET', '/me/exports'),
+      createExport: () => request<{ export: CreatedDataExportDto }>('POST', '/me/exports'),
+      deletionBlockers: () => request<{ blockers: DeletionBlockerDto[] }>('GET', '/me/deletion-blockers'),
+      requestDeletion: (password: string) => request<{ emailQueued: boolean }>('POST', '/me/deletion-request', { password }),
+      confirmDeletion: (token: string) => request<{ deleted: true; erasedOrganisations: number }>('POST', '/me/deletion-confirm', { token, confirm: 'DELETE' }),
+    },
     organisations: {
       list: () => request<{ organisations: OrganisationDto[] }>('GET', '/organisations'),
+      rename: (orgId: string, name: string) => request<{ organisation: { id: string; name: string } }>('PATCH', `/organisations/${orgId}`, { name }),
+      scheduleDeletion: (orgId: string, confirmName: string, password: string) =>
+        request<{ organisation: PendingOrganisationDeletionDto }>('DELETE', `/organisations/${orgId}`, { confirmName, password }),
+      pendingDeletion: () => request<{ organisations: PendingOrganisationDeletionDto[] }>('GET', '/organisations/pending-deletion'),
+      restore: (orgId: string) => request<void>('POST', `/organisations/${orgId}/restore`),
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),

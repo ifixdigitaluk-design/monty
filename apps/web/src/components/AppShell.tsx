@@ -145,6 +145,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
       </div>
       <div className="border-t border-line p-2">
         {navItem('/settings/sessions', 'Sessions & security', pathname === '/settings/sessions')}
+        {navItem('/settings/account', 'Account & data', pathname === '/settings/account')}
         <div className="flex items-center justify-between px-2 pt-2">
           <span className="truncate text-[13px] text-muted" title={user.email}>
             {user.name}

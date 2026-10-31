@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
+import { DataLifecycleService } from '../account/data-lifecycle.service';
 import { DbService } from '../db/db.service';
 
 /** Retention periods. Outbox events only need to outlive the longest client reconnect gap (replay window). */
@@ -24,7 +25,10 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('Maintenance');
   private timer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly dbs: DbService) {}
+  constructor(
+    private readonly dbs: DbService,
+    private readonly lifecycle: DataLifecycleService,
+  ) {}
 
   onModuleInit() {
     this.timer = setInterval(() => void this.runNow().catch((err) => this.logger.error(JSON.stringify({ msg: 'maintenance_failed', error: String(err) }))), INTERVAL_MS);
@@ -58,6 +62,8 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
       sessions: await this.purge('sessions', sql`(expires_at < ${days(RETENTION.expiredSessionDays)}) or (revoked_at is not null and revoked_at < ${days(RETENTION.expiredSessionDays)})`),
       userTokens: await this.purge('user_tokens', sql`(used_at is not null and used_at < ${days(RETENTION.usedTokenDays)}) or expires_at < ${days(RETENTION.usedTokenDays)}`),
       automationRuns: await this.purge('automation_runs', sql`created_at < ${days(RETENTION.automationRunDays)}`),
+      dataExports: await this.purge('data_exports', sql`expires_at < now()`),
+      organisations: await this.lifecycle.purgeDueOrganisations(),
       emails: await this.purge('email_outbox', sql`status in ('SENT', 'FAILED', 'EXPIRED') and finished_at < ${days(RETENTION.finishedEmailDays)}`),
     };
     this.logger.log(JSON.stringify({ msg: 'maintenance_done', ...result }));

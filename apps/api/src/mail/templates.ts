@@ -66,3 +66,35 @@ export function invitationEmail(to: string, inviterName: string, organisationNam
     ),
   };
 }
+
+export function accountDeletionEmail(to: string, name: string, url: string): MailMessage {
+  const footer = 'If you didn’t ask to delete your account, ignore this email and change your password — nothing will be deleted.';
+  return {
+    kind: 'account_deletion',
+    to,
+    subject: 'Confirm deleting your Monty account',
+    text: `Hi ${name},\n\nYou asked to delete your Monty account. This cannot be undone. To confirm, open this link while signed in (valid for 1 hour, works once):\n\n${url}\n\n${footer}\n`,
+    html: layout(
+      'Confirm account deletion',
+      `<p style="margin:0">Hi ${escapeHtml(name)}, you asked to delete your Monty account. <strong>This cannot be undone.</strong> Open the link while signed in to confirm. It is valid for 1 hour and works once.</p>`,
+      { label: 'Review and confirm deletion', url },
+      footer,
+    ),
+  };
+}
+
+export function organisationDeletionEmail(to: string, organisationName: string, actorName: string, purgeDate: string, url: string): MailMessage {
+  const footer = 'Owners can restore the organisation from Settings until the date above.';
+  return {
+    kind: 'organisation_deletion_scheduled',
+    to,
+    subject: `${organisationName} is scheduled for deletion`,
+    text: `${actorName} scheduled the organisation ${organisationName} for deletion. It is no longer accessible, and everything in it will be permanently erased on ${purgeDate}.\n\n${url}\n\n${footer}\n`,
+    html: layout(
+      `${organisationName} is scheduled for deletion`,
+      `<p style="margin:0">${escapeHtml(actorName)} scheduled <strong>${escapeHtml(organisationName)}</strong> for deletion. It is no longer accessible, and all its projects, tasks and documents will be permanently erased on <strong>${escapeHtml(purgeDate)}</strong>.</p>`,
+      { label: 'Open Monty', url },
+      footer,
+    ),
+  };
+}

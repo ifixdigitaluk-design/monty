@@ -35,7 +35,7 @@ export const organisationRole = pgEnum('organisation_role', ['OWNER', 'ADMIN', '
 export const workspaceRole = pgEnum('workspace_role', ['ADMIN', 'MEMBER', 'VIEWER']);
 export const projectLifecycle = pgEnum('project_lifecycle', ['DRAFT', 'ACTIVE', 'IN_REVIEW', 'COMPLETED', 'CANCELLED']);
 export const priority = pgEnum('priority', ['NONE', 'LOW', 'MEDIUM', 'HIGH', 'URGENT']);
-export const userTokenPurpose = pgEnum('user_token_purpose', ['PASSWORD_RESET', 'EMAIL_VERIFICATION']);
+export const userTokenPurpose = pgEnum('user_token_purpose', ['PASSWORD_RESET', 'EMAIL_VERIFICATION', 'ACCOUNT_DELETION']);
 export const taskStatus = pgEnum('task_status', ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELLED']);
 
 export const users = pgTable('users', {
@@ -80,7 +80,11 @@ export const organisations = pgTable('organisations', {
     .references(() => users.id),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+  /** Set when deletion is scheduled; the organisation is hidden immediately and restorable until purgeAfter. */
   deletedAt: ts('deleted_at'),
+  deletionRequestedById: uuid('deletion_requested_by_id').references(() => users.id, { onDelete: 'set null' }),
+  /** After this moment the maintenance job erases the organisation and everything in it. */
+  purgeAfter: ts('purge_after'),
 });
 
 export const organisationMemberships = pgTable(
@@ -604,6 +608,24 @@ export const emailDeliveryAttempts = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('email_attempts_email_idx').on(t.emailId, t.attempt)],
+);
+
+/** Personal data exports. Content is gzip + AES-256-GCM encrypted; downloadable with a one-time-shown token until expiry. */
+export const dataExports = pgTable(
+  'data_exports',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    downloadTokenHash: text('download_token_hash').notNull().unique(),
+    createdAt: createdAt(),
+    expiresAt: ts('expires_at').notNull(),
+    downloadedAt: ts('downloaded_at'),
+  },
+  (t) => [index('data_exports_user_idx').on(t.userId, t.createdAt)],
 );
 
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */

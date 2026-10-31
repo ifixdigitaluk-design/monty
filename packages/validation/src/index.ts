@@ -610,3 +610,42 @@ export interface AutomationRunDto {
   createdAt: string;
   finishedAt: string | null;
 }
+
+// ---------- data lifecycle ----------
+export const RenameOrganisationSchema = z.strictObject({ name: name });
+export type RenameOrganisationInput = z.infer<typeof RenameOrganisationSchema>;
+export const DeleteOrganisationSchema = z.strictObject({
+  /** Must equal the organisation's current name: guards against deleting the wrong one. */
+  confirmName: z.string().min(1).max(200),
+  password: z.string().min(1).max(200),
+});
+export type DeleteOrganisationInput = z.infer<typeof DeleteOrganisationSchema>;
+export const RequestAccountDeletionSchema = z.strictObject({ password: z.string().min(1).max(200) });
+export const ConfirmAccountDeletionSchema = z.strictObject({
+  token: z.string().regex(/^[A-Za-z0-9_-]{20,100}$/),
+  confirm: z.literal('DELETE', { error: 'Type DELETE to confirm' }),
+});
+export type ConfirmAccountDeletionInput = z.infer<typeof ConfirmAccountDeletionSchema>;
+
+export interface DataExportDto {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  sizeBytes: number;
+  downloadedAt: string | null;
+}
+export interface CreatedDataExportDto extends DataExportDto {
+  /** Shown once. Requires the same signed-in account and stops working at expiresAt. */
+  downloadPath: string;
+}
+export interface DeletionBlockerDto {
+  organisationId: string;
+  name: string;
+  memberCount: number;
+}
+export interface PendingOrganisationDeletionDto {
+  id: string;
+  name: string;
+  deletedAt: string;
+  purgeAfter: string;
+}

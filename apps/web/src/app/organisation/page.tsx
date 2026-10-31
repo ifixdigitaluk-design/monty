@@ -18,7 +18,7 @@ export default function OrganisationPage() {
   );
 }
 
-type Tab = 'members' | 'invitations' | 'audit' | 'plan';
+type Tab = 'members' | 'invitations' | 'audit' | 'plan' | 'settings';
 
 function OrganisationView() {
   const id = useSearchParams().get('id');
@@ -91,6 +91,7 @@ function OrganisationView() {
     { key: 'invitations', label: 'Invitations', show: canManage },
     { key: 'audit', label: 'Audit log', show: canManage },
     { key: 'plan', label: 'Plan & usage', show: true },
+    { key: 'settings', label: 'Settings', show: canManage },
   ];
 
   return (
@@ -155,6 +156,18 @@ function OrganisationView() {
       {tab === 'invitations' && canManage ? <Invitations orgId={id} workspaces={org.workspaces} /> : null}
       {tab === 'audit' && canManage ? <AuditLog orgId={id} /> : null}
       {tab === 'plan' ? <PlanUsage orgId={id} /> : null}
+      {tab === 'settings' && canManage ? (
+        <OrganisationSettings
+          orgId={id}
+          name={org.name}
+          isOwner={org.role === 'OWNER'}
+          onRenamed={() => void refreshOrganisations()}
+          onDeleted={async () => {
+            await refreshOrganisations();
+            router.replace('/settings/account');
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -401,6 +414,83 @@ function PlanUsage({ orgId }: { orgId: string }) {
         })}
       </ul>
       <p className="text-[12px] text-muted">Online upgrades aren’t available yet — contact support to change plan.</p>
+    </div>
+  );
+}
+
+function OrganisationSettings(props: { orgId: string; name: string; isOwner: boolean; onRenamed: () => void; onDeleted: () => void }) {
+  const toast = useToast();
+  const [name, setName] = useState(props.name);
+  const [renaming, setRenaming] = useState(false);
+  const [confirmName, setConfirmName] = useState('');
+  const [password, setPassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function rename(e: FormEvent) {
+    e.preventDefault();
+    setRenaming(true);
+    try {
+      await api.organisations.rename(props.orgId, name.trim());
+      toast({ tone: 'success', message: 'Organisation renamed.' });
+      props.onRenamed();
+    } catch (err) {
+      toast({ tone: 'error', message: errorMessage(err) });
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function remove(e: FormEvent) {
+    e.preventDefault();
+    setDeleting(true);
+    setError(null);
+    try {
+      const { organisation } = await api.organisations.scheduleDeletion(props.orgId, confirmName, password);
+      toast({ tone: 'success', message: `${organisation.name} is scheduled for deletion. You can restore it until ${organisation.purgeAfter.slice(0, 10)}.` });
+      props.onDeleted();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <form onSubmit={rename} className="rounded-xl border border-line bg-surface p-4">
+        <h2 className="mb-2 font-semibold">Organisation name</h2>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Name" htmlFor="org-name">
+            <Input id="org-name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+          </Field>
+          <Button type="submit" busy={renaming} disabled={!name.trim() || name.trim() === props.name}>Save name</Button>
+        </div>
+      </form>
+
+      {props.isOwner ? (
+        <form onSubmit={remove} className="rounded-xl border border-danger/40 bg-surface p-4" aria-labelledby="danger-heading">
+          <h2 id="danger-heading" className="font-semibold text-danger">Delete organisation</h2>
+          <p className="mt-1 text-[13px] text-muted">
+            Everyone loses access immediately and members are emailed. Owners can restore it from Account & data for 30 days; after that all its
+            workspaces, projects, tasks, documents, comments and history are erased permanently.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label={`Type “${props.name}” to confirm`} htmlFor="org-confirm-name">
+              <Input id="org-confirm-name" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} autoComplete="off" required />
+            </Field>
+            <Field label="Your password" htmlFor="org-delete-password">
+              <Input id="org-delete-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </Field>
+          </div>
+          {error ? <p role="alert" className="mt-2 text-danger">{error}</p> : null}
+          <Button className="mt-3" type="submit" variant="danger" busy={deleting} disabled={confirmName !== props.name || !password}>
+            Delete organisation
+          </Button>
+        </form>
+      ) : (
+        <p className="text-[13px] text-muted">Only an owner can delete this organisation.</p>
+      )}
     </div>
   );
 }
