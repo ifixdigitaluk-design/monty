@@ -23,7 +23,26 @@ export class DbService implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger('Db');
 
   constructor(@Inject(CONFIG) private readonly config: AppConfig) {
-    this.handle = createDb(config.databaseUrl, { max: config.dbPoolMax });
+    this.handle = createDb(config.databaseUrl, {
+      max: config.dbPoolMax,
+      statementTimeoutMs: config.timeouts.statementMs,
+      idleInTransactionTimeoutMs: config.timeouts.idleInTransactionMs,
+      lockTimeoutMs: config.timeouts.lockMs,
+      connectTimeoutMs: config.timeouts.connectMs,
+      // Broken idle connections are discarded by the pool; log so a database restart is visible.
+      onPoolError: (err) => this.logger.warn(JSON.stringify({ msg: 'db_pool_connection_error', error: String(err).slice(0, 200) })),
+    });
+  }
+
+  /** Pool counters for metrics/readiness. */
+  poolStats() {
+    const p = this.handle.pool;
+    return { total: p.totalCount, idle: p.idleCount, waiting: p.waitingCount, max: this.config.dbPoolMax };
+  }
+
+  /** For maintenance jobs that legitimately run longer statements than requests: raise the limit for one transaction. */
+  async allowLongStatements(ms: number) {
+    await this.db.execute(sql`select set_config('statement_timeout', ${String(ms)}, true)`);
   }
 
   get db(): Database {

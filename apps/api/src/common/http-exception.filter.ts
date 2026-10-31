@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { transientDbFailure } from './db-errors';
 
 const STATUS_CODES: Record<number, string> = {
   400: 'VALIDATION_FAILED',
@@ -45,6 +46,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
+    const transient = transientDbFailure(exception);
+    if (transient) {
+      this.logger.warn(JSON.stringify({ msg: 'db_unavailable', reason: transient, requestId: req.headers['x-request-id'], path: req.path }));
+      if (!res.headersSent) {
+        res.setHeader('Retry-After', '2');
+        res
+          .status(503)
+          .json({ error: { code: 'SERVICE_UNAVAILABLE', message: 'The service is busy right now. Nothing was saved — please try again in a moment.' } });
+      }
+      return;
+    }
+
     this.logger.error(
       JSON.stringify({
         msg: 'unhandled_error',
@@ -53,6 +66,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
         error: exception instanceof Error ? { name: exception.name, message: exception.message, stack: exception.stack } : String(exception),
       }),
     );
-    res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
+    if (!res.headersSent) res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
   }
 }

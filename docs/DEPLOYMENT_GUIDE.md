@@ -56,3 +56,18 @@ pnpm e2e
 - **Desktop**: Phase 3 — Tauri builds per OS in CI, code-signed (Apple Developer ID + notarisation; Windows Authenticode), updater manifests signed with Tauri updater key.
 
 Operational procedures (rollback, restore, incidents, secret rotation) are in RUNBOOKS.md.
+
+## Timeouts (and why these values)
+| Setting | Default | Reason |
+|---|---|---|
+| `DB_STATEMENT_TIMEOUT_MS` | 15 000 | The slowest request queries in the load test were < 0.6 s p99. 15 s is far above legitimate use but stops a runaway query from holding a connection for minutes. Maintenance jobs raise it per transaction (120 s); migrations use their own connection with no limit. |
+| `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | 60 000 | Each authenticated request is one transaction. The longest legitimate pause inside one is the AI provider call (30 s timeout). 60 s leaves headroom; the API refuses to start with ≤ 35 s. A crashed/stalled handler can no longer pin locks indefinitely. |
+| `DB_LOCK_TIMEOUT_MS` | 5 000 | Row locks are held for milliseconds (version checks, proposal apply). Waiting longer means contention or a stuck session; failing fast with 503 + `Retry-After` is better than piling up requests. |
+| `DB_CONNECT_TIMEOUT_MS` | 5 000 | Max wait for a pooled connection. With `DB_POOL_MAX` exhausted, clients get 503 instead of an unbounded queue. |
+| `DB_POOL_MAX` | 10 | Per instance. Keep `instances × DB_POOL_MAX` + migrations + admin < Postgres `max_connections` (or use PgBouncer in transaction mode; all session settings used are transaction-local). |
+| `REQUEST_TIMEOUT_MS` | 40 000 | Outer limit for any handler (AI 30 s + margin). Live-update streams are exempt. On timeout the client gets 503 `REQUEST_TIMEOUT`; the message tells users to refresh before retrying, because the transaction may still have committed. |
+| HTTP server | headers 20 s, body `REQUEST_TIMEOUT_MS + 5 s`, keep-alive 65 s | Slowloris protection; keep-alive above common 60 s load-balancer idle timeouts to avoid 502s. |
+| SMTP | connect 10 s, greeting 10 s, socket 20 s | Worker lease is 2 min, so a slow provider can't cause duplicate parallel sends. |
+| Webhooks / AI | 5 s / 30 s | Unchanged. |
+
+Transient database failures (statement/lock/idle timeouts, pool exhaustion, dropped connections, deadlocks) return **503 `SERVICE_UNAVAILABLE`** with `Retry-After: 2`, logged as `db_unavailable` with the reason. Covered by `apps/api/test/db-timeouts.e2e.test.ts`.

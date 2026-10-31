@@ -17,8 +17,38 @@ export interface DbHandle {
   close(): Promise<void>;
 }
 
-export function createDb(connectionString: string, opts: { max?: number } = {}): DbHandle {
-  const pool = new Pool({ connectionString, max: opts.max ?? 10 });
+export interface DbOptions {
+  max?: number;
+  /** Server-side cap per statement (Postgres statement_timeout). Omit for no limit (migrations). */
+  statementTimeoutMs?: number;
+  /** Postgres idle_in_transaction_session_timeout: kills sessions that hold a transaction open but do nothing. */
+  idleInTransactionTimeoutMs?: number;
+  /** Postgres lock_timeout: how long a statement may wait for a row/table lock. */
+  lockTimeoutMs?: number;
+  /** Max wait to get a connection from the pool (or open a new one). */
+  connectTimeoutMs?: number;
+  /** Called for errors on idle pooled connections (e.g. the server restarted). Without a handler they crash the process. */
+  onPoolError?: (err: Error) => void;
+}
+
+export function createDb(connectionString: string, opts: DbOptions = {}): DbHandle {
+  const pool = new Pool({
+    connectionString,
+    max: opts.max ?? 10,
+    idleTimeoutMillis: 30_000,
+    ...(opts.connectTimeoutMs ? { connectionTimeoutMillis: opts.connectTimeoutMs } : {}),
+    ...(opts.statementTimeoutMs
+      ? {
+          statement_timeout: opts.statementTimeoutMs,
+          // Client-side backstop if the server can't answer at all (network partition): a little above the server limit.
+          query_timeout: opts.statementTimeoutMs + 5_000,
+        }
+      : {}),
+    ...(opts.idleInTransactionTimeoutMs ? { idle_in_transaction_session_timeout: opts.idleInTransactionTimeoutMs } : {}),
+    ...(opts.lockTimeoutMs ? { lock_timeout: opts.lockTimeoutMs } : {}),
+    keepAlive: true,
+  });
+  pool.on('error', (err) => (opts.onPoolError ? opts.onPoolError(err) : undefined));
   const db = drizzle(pool, { schema });
   return { db, pool, close: () => pool.end() };
 }

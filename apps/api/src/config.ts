@@ -9,6 +9,12 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   /** Postgres connections per API instance. Each authenticated request holds one for its duration (RLS transaction). */
   DB_POOL_MAX: z.coerce.number().int().min(2).max(200).default(10),
+  /** Timeouts (milliseconds). See docs/DEPLOYMENT_GUIDE.md "Timeouts" for how these values were chosen. */
+  DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).default(15_000),
+  DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().min(100).default(60_000),
+  DB_LOCK_TIMEOUT_MS: z.coerce.number().int().min(50).default(5_000),
+  DB_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(50).default(5_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).default(40_000),
   RATE_LIMIT: z.coerce.number().int().positive().default(300),
   AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
   TRUST_PROXY: z.string().default('loopback'),
@@ -43,6 +49,7 @@ export interface AppConfig {
   isProduction: boolean;
   databaseUrl: string;
   dbPoolMax: number;
+  timeouts: { statementMs: number; idleInTransactionMs: number; lockMs: number; connectMs: number; requestMs: number };
   port: number;
   allowedOrigins: string[];
   logLevel: 'debug' | 'info' | 'warn' | 'error';
@@ -78,6 +85,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error('Invalid environment: production requires MAIL_TRANSPORT=smtp (password reset and verification depend on email)');
   }
   if (e.AI_PROVIDER === 'anthropic' && (!e.AI_API_KEY || !e.AI_MODEL)) throw new Error('Invalid environment: AI_PROVIDER=anthropic requires AI_API_KEY and AI_MODEL');
+  if (e.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS <= 30_000 + 5_000) {
+    // A request transaction can be open while the AI provider answers (up to 30 s).
+    throw new Error('Invalid environment: DB_IDLE_IN_TRANSACTION_TIMEOUT_MS must exceed 35000 (AI requests run inside a transaction for up to 30 s)');
+  }
   if (isProduction && e.SMTP_TLS_REJECT_UNAUTHORIZED === 'false') throw new Error('Invalid environment: SMTP_TLS_REJECT_UNAUTHORIZED=false is not allowed in production');
   let dataKey: Buffer;
   if (e.DATA_ENCRYPTION_KEY) {
@@ -95,6 +106,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     isProduction,
     databaseUrl: e.DATABASE_URL,
     dbPoolMax: e.DB_POOL_MAX,
+    timeouts: {
+      statementMs: e.DB_STATEMENT_TIMEOUT_MS,
+      idleInTransactionMs: e.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+      lockMs: e.DB_LOCK_TIMEOUT_MS,
+      connectMs: e.DB_CONNECT_TIMEOUT_MS,
+      requestMs: e.REQUEST_TIMEOUT_MS,
+    },
     port: e.API_PORT,
     allowedOrigins: e.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
     logLevel: e.LOG_LEVEL,

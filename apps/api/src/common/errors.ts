@@ -12,6 +12,8 @@ export type ErrorCode =
   | 'EMAIL_TAKEN'
   | 'RATE_LIMITED'
   | 'PLAN_LIMIT_REACHED'
+  | 'SERVICE_UNAVAILABLE'
+  | 'REQUEST_TIMEOUT'
   | 'INTERNAL';
 
 export class AppException extends HttpException {

@@ -39,6 +39,8 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
     let total = 0;
     for (;;) {
       const n = await this.dbs.runAsSystem(async () => {
+        // Bulk deletes may legitimately take longer than a request's 15 s statement limit.
+        await this.dbs.allowLongStatements(120_000);
         const r = await this.dbs.db.execute(
           sql`delete from ${sql.identifier(table)} where ctid in (select ctid from ${sql.identifier(table)} where ${condition} limit ${BATCH})`,
         );
