@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+out
+coverage
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+playwright-report
+test-results
+next-env.d.ts
+e2e/screenshots

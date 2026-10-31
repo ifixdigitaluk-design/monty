@@ -1,0 +1,198 @@
+'use client';
+
+import { canInOrg } from '@monty/domain';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { FormEvent, ReactNode, Suspense, useState } from 'react';
+import { api, errorMessage } from '@/lib/api';
+import { RequireSession, useSession } from '@/lib/session';
+import { Button, cx, Field, Input, Modal, PageLoading } from './ui';
+
+export function AppShell({ children }: { children: ReactNode }) {
+  // Suspense is required because the shell and pages read query parameters (static-export friendly routing, ADR-005).
+  return (
+    <Suspense fallback={<PageLoading />}>
+      <RequireSession fallback={<PageLoading />}>
+        <Shell>{children}</Shell>
+      </RequireSession>
+    </Suspense>
+  );
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  const [navOpen, setNavOpen] = useState(false);
+  return (
+    <div className="flex min-h-screen">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-surface focus:p-2">
+        Skip to content
+      </a>
+      <aside
+        className={cx(
+          'fixed inset-y-0 left-0 z-40 w-64 shrink-0 border-r border-line bg-surface transition-transform md:static md:translate-x-0',
+          navOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <Sidebar onNavigate={() => setNavOpen(false)} />
+      </aside>
+      {navOpen ? <div className="fixed inset-0 z-30 bg-black/30 md:hidden" onClick={() => setNavOpen(false)} /> : null}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 items-center border-b border-line px-3 md:hidden">
+          <Button variant="ghost" aria-label="Open navigation" onClick={() => setNavOpen(true)}>
+            ☰
+          </Button>
+          <span className="ml-2 font-semibold">Monty</span>
+        </header>
+        <main id="main" className="min-w-0 flex-1">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ onNavigate }: { onNavigate: () => void }) {
+  const { user, organisations, refreshOrganisations, logout } = useSession();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const router = useRouter();
+  const activeWorkspace = pathname === '/workspace' ? params.get('id') : null;
+  const [orgModal, setOrgModal] = useState(false);
+  const [wsModalOrg, setWsModalOrg] = useState<string | null>(null);
+
+  const navItem = (href: string, label: string, active: boolean) => (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={cx('block rounded-md px-2 py-1.5 hover:bg-surface-2', active && 'bg-surface-2 font-medium')}
+    >
+      {label}
+    </Link>
+  );
+
+  return (
+    <nav aria-label="Main" className="flex h-full flex-col">
+      <div className="flex h-12 items-center px-4 font-semibold tracking-tight">Monty</div>
+      <div className="flex-1 space-y-5 overflow-y-auto px-2 pb-4">
+        <div>{navItem('/tasks', 'My Tasks', pathname === '/tasks')}</div>
+
+        {organisations.map((org) => (
+          <div key={org.id}>
+            <div className="flex items-center justify-between px-2 pb-1">
+              <span className="truncate text-[12px] font-medium uppercase tracking-wide text-muted" title={org.name}>
+                {org.kind === 'PERSONAL' ? 'Personal' : org.name}
+              </span>
+              {canInOrg(org.role, 'workspace.create') ? (
+                <button
+                  className="rounded px-1 text-muted hover:bg-surface-2 hover:text-fg"
+                  aria-label={`New workspace in ${org.name}`}
+                  title="New workspace"
+                  onClick={() => setWsModalOrg(org.id)}
+                >
+                  +
+                </button>
+              ) : null}
+            </div>
+            {org.workspaces.length === 0 ? (
+              <p className="px-2 text-[12px] text-muted">No workspaces you can access.</p>
+            ) : (
+              org.workspaces.map((ws) => (
+                <div key={ws.id}>{navItem(`/workspace?id=${ws.id}`, ws.name, activeWorkspace === ws.id)}</div>
+              ))
+            )}
+          </div>
+        ))}
+
+        <div className="px-2">
+          <Button variant="ghost" className="w-full justify-start px-0" onClick={() => setOrgModal(true)}>
+            + New organisation
+          </Button>
+        </div>
+      </div>
+      <div className="border-t border-line p-2">
+        {navItem('/settings/sessions', 'Sessions & security', pathname === '/settings/sessions')}
+        <div className="flex items-center justify-between px-2 pt-2">
+          <span className="truncate text-[13px] text-muted" title={user.email}>
+            {user.name}
+          </span>
+          <Button variant="ghost" onClick={() => void logout()}>
+            Sign out
+          </Button>
+        </div>
+      </div>
+
+      <NameModal
+        open={orgModal}
+        title="New organisation"
+        label="Organisation name"
+        placeholder="Acme Agency"
+        onClose={() => setOrgModal(false)}
+        onSubmit={async (name) => {
+          const { organisation } = await api.organisations.create({ name });
+          await refreshOrganisations();
+          router.push(`/workspace?id=${organisation.workspaces[0]!.id}`);
+        }}
+      />
+      <NameModal
+        open={wsModalOrg !== null}
+        title="New workspace"
+        label="Workspace name"
+        placeholder="Marketing"
+        onClose={() => setWsModalOrg(null)}
+        onSubmit={async (name) => {
+          const { workspace } = await api.organisations.createWorkspace(wsModalOrg!, { name });
+          await refreshOrganisations();
+          router.push(`/workspace?id=${workspace.id}`);
+        }}
+      />
+    </nav>
+  );
+}
+
+function NameModal(props: {
+  open: boolean;
+  title: string;
+  label: string;
+  placeholder: string;
+  onClose: () => void;
+  onSubmit: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const id = `name-${props.title.replace(/\s/g, '-').toLowerCase()}`;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onSubmit(name.trim());
+      setName('');
+      props.onClose();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={props.open} onClose={props.onClose} title={props.title}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label={props.label} htmlFor={id}>
+          <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder={props.placeholder} required autoFocus />
+        </Field>
+        {error ? <p role="alert" className="text-danger">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={props.onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" busy={busy} disabled={!name.trim()}>
+            Create
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

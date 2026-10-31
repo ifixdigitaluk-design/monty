@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monty
+          POSTGRES_PASSWORD: monty_dev
+          POSTGRES_DB: monty_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U monty" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      TEST_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      E2E_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_e2e
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --prod
+      - name: Build (web build points its /api proxy at the e2e API port)
+        run: API_INTERNAL_URL=http://localhost:4100 pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - name: Create e2e database
+        run: PGPASSWORD=monty_dev psql -h localhost -U monty -d monty_test -c 'CREATE DATABASE monty_e2e'
+      - run: pnpm --filter @monty/e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/test-results

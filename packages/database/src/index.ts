@@ -1,0 +1,44 @@
+import path from 'node:path';
+import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+export * from './schema';
+export { schema };
+
+export type Database = NodePgDatabase<typeof schema>;
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type DbOrTx = Database | Transaction;
+
+export interface DbHandle {
+  db: Database;
+  pool: Pool;
+  close(): Promise<void>;
+}
+
+export function createDb(connectionString: string, opts: { max?: number } = {}): DbHandle {
+  const pool = new Pool({ connectionString, max: opts.max ?? 10 });
+  const db = drizzle(pool, { schema });
+  return { db, pool, close: () => pool.end() };
+}
+
+export const MIGRATIONS_FOLDER = path.resolve(__dirname, '..', 'drizzle');
+
+/** Applies committed migrations (forward-only). Safe to run repeatedly. */
+export async function runMigrations(connectionString: string): Promise<void> {
+  const handle = createDb(connectionString, { max: 1 });
+  try {
+    await migrate(handle.db, { migrationsFolder: MIGRATIONS_FOLDER });
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Postgres unique-violation detection, tolerant of driver error wrapping. */
+export function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+    if ((e as { code?: unknown }).code === '23505') return true;
+  }
+  return false;
+}

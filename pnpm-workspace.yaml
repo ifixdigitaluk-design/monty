@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild
+  - sharp
+  - unrs-resolver
+
+# Security: @nestjs/platform-express 11.2.8 pins multer 2.4.0 (GHSA-q7qp-rjg7-q26m). Remove once Nest ships >=2.5.0.
+overrides:
+  multer: 2.5.0
