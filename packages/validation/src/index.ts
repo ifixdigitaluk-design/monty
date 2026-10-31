@@ -405,13 +405,15 @@ export const CalendarQuerySchema = z
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Range is limited to 62 days' });
 
 export interface SearchResultDto {
-  type: 'project' | 'task' | 'comment';
+  type: 'project' | 'task' | 'comment' | 'document';
   id: string;
   title: string;
   snippet: string;
+  /** Empty for workspace documents that are not linked to a project. */
   projectId: string;
   projectName: string;
   taskId: string | null;
+  workspaceId: string;
   workspaceName: string;
 }
 
@@ -431,4 +433,49 @@ export interface HomeDto {
   counts: { overdue: number; today: number; thisWeek: number; open: number; unreadNotifications: number };
   attention: { projectId: string; projectName: string; workspaceName: string; computedStatus: string; reasons: string[] }[];
   recentActivity: ActivityDto[];
+}
+
+// ---------- documents ----------
+const docTitle = z.string().trim().min(1, 'Required').max(300);
+const docBody = z.string().max(200_000, 'Document is too long (200,000 characters max)');
+export const CreateDocumentSchema = z.strictObject({
+  id: uuid.optional(),
+  title: docTitle,
+  body: docBody.optional(),
+  parentId: uuid.nullable().optional(),
+  projectId: uuid.nullable().optional(),
+});
+export type CreateDocumentInput = z.infer<typeof CreateDocumentSchema>;
+export const UpdateDocumentSchema = z.strictObject({
+  expectedVersion: z.int().positive(),
+  title: docTitle.optional(),
+  body: docBody.optional(),
+  parentId: uuid.nullable().optional(),
+  projectId: uuid.nullable().optional(),
+});
+export type UpdateDocumentInput = z.infer<typeof UpdateDocumentSchema>;
+
+export interface DocumentSummaryDto {
+  id: string;
+  title: string;
+  parentId: string | null;
+  projectId: string | null;
+  updatedAt: string;
+}
+export interface DocumentDto extends DocumentSummaryDto {
+  workspaceId: string;
+  body: string;
+  version: number;
+  createdBy: { id: string; name: string };
+  updatedBy: { id: string; name: string };
+  role: 'ADMIN' | 'MEMBER' | 'VIEWER';
+}
+export interface DocumentVersionDto {
+  id: string;
+  version: number;
+  title: string;
+  author: { id: string; name: string };
+  createdAt: string;
+  updatedAt: string;
+  body?: string;
 }

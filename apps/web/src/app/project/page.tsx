@@ -260,6 +260,7 @@ function ProjectView() {
               onOpenTask={setOpenTaskId}
               taskTitle={(taskId) => tasks.find((t) => t.id === taskId)?.title ?? 'Open task'}
             /> : <PageLoading />}
+          <ProjectDocs workspaceId={project.workspaceId} projectId={project.id} canEdit={canEdit} />
           <Milestones projectId={project.id} milestones={milestones} canEdit={canEditProject} onChanged={() => void refreshDerived()} />
           {canDelete ? (
             <DeleteProject
@@ -523,5 +524,47 @@ function DeleteProject({ onDelete }: { onDelete: () => Promise<void> }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function ProjectDocs({ workspaceId, projectId, canEdit }: { workspaceId: string; projectId: string; canEdit: boolean }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [docs, setDocs] = useState<{ id: string; title: string }[] | null>(null);
+  useEffect(() => {
+    api.documents
+      .list(workspaceId, projectId)
+      .then((r) => setDocs(r.documents))
+      .catch(() => setDocs([]));
+  }, [workspaceId, projectId]);
+  return (
+    <section aria-labelledby="project-docs-title" className="rounded-xl border border-line bg-surface p-4">
+      <h2 id="project-docs-title" className="mb-2 font-semibold">Documents</h2>
+      {docs && docs.length === 0 ? <p className="text-[13px] text-muted">No project documents yet.</p> : null}
+      <ul className="space-y-1 text-[13px]">
+        {docs?.map((d) => (
+          <li key={d.id}>
+            <Link className="hover:underline" href={`/docs?ws=${workspaceId}&id=${d.id}`}>
+              {d.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {canEdit ? (
+        <Button
+          className="mt-2"
+          onClick={async () => {
+            try {
+              const { document } = await api.documents.create(workspaceId, { id: crypto.randomUUID(), title: 'Untitled', projectId });
+              router.push(`/docs?ws=${workspaceId}&id=${document.id}`);
+            } catch (err) {
+              toast({ tone: 'error', message: errorMessage(err) });
+            }
+          }}
+        >
+          New project doc
+        </Button>
+      ) : null}
+    </section>
   );
 }

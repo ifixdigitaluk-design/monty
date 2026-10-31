@@ -11,6 +11,7 @@
   "dependencies": {
     "@monty/api-client": "workspace:*",
     "@monty/domain": "workspace:*",
+    "@monty/editor": "workspace:*",
     "@monty/validation": "workspace:*",
     "next": "16.4.3",
     "react": "19.3.1",

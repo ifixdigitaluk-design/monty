@@ -59,6 +59,9 @@ function WorkspaceView() {
           <p className="text-muted">Projects in this workspace</p>
         </div>
         <div className="flex gap-2">
+          <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/docs?ws=${id}`}>
+            Documents
+          </Link>
           {canInWorkspace(data.workspace.role, 'workspace.manage') && !isPersonal ? (
             <Button onClick={() => setManaging(true)}>Manage access</Button>
           ) : null}

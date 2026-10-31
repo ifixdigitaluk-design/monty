@@ -397,6 +397,67 @@ export const notifications = pgTable(
   ],
 );
 
+export const documents = pgTable(
+  'documents',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id'),
+    parentId: uuid('parent_id'),
+    title: text('title').notNull(),
+    /** Markdown source. Rendered client-side into React elements (never as raw HTML). */
+    body: text('body').notNull().default(''),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    updatedById: uuid('updated_by_id')
+      .notNull()
+      .references(() => users.id),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({
+      name: 'documents_workspace_org_fk',
+      columns: [t.workspaceId, t.organisationId],
+      foreignColumns: [workspaces.id, workspaces.organisationId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'documents_project_workspace_fk',
+      columns: [t.projectId, t.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId],
+    }).onDelete('cascade'),
+    foreignKey({ name: 'documents_parent_fk', columns: [t.parentId], foreignColumns: [t.id] }).onDelete('cascade'),
+    index('documents_workspace_idx').on(t.workspaceId, t.deletedAt),
+    index('documents_project_idx').on(t.projectId),
+    index('documents_parent_idx').on(t.parentId),
+  ],
+);
+
+export const documentVersions = pgTable(
+  'document_versions',
+  {
+    id: pk(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    version: integer('version').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('document_versions_doc_idx').on(t.documentId, t.createdAt)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -451,3 +512,5 @@ export type UserToken = typeof userTokens.$inferSelect;
 export type Milestone = typeof milestones.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type Document = typeof documents.$inferSelect;
+export type DocumentVersion = typeof documentVersions.$inferSelect;

@@ -22,6 +22,8 @@ import { CollaborationController } from './collaboration/collaboration.controlle
 import { CollaborationService } from './collaboration/collaboration.service';
 import { InsightsController } from './insights/insights.controller';
 import { InsightsService } from './insights/insights.service';
+import { DocumentsController } from './documents/documents.controller';
+import { DocumentsService } from './documents/documents.service';
 import { AccountRecoveryService } from './auth/account-recovery.service';
 import { DevMailboxController, MailService } from './mail/mail.service';
 
@@ -55,6 +57,7 @@ export class AppModule {
         MembersController,
         CollaborationController,
         InsightsController,
+        DocumentsController,
         // Development-only mailbox: never registered in production or with a real mail provider.
         ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
       ],
@@ -67,6 +70,7 @@ export class AppModule {
         MembersService,
         CollaborationService,
         InsightsService,
+        DocumentsService,
         AccessService,
         OrganisationsService,
         ProjectsService,

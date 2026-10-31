@@ -29,23 +29,29 @@ export class InsightsService {
       select * from (
         select 'project' as type, p.id, p.name as title,
                ts_headline('simple', coalesce(nullif(p.objective, ''), p.description, p.name), q.query, ${opts}) as snippet,
-               p.id as project_id, p.name as project_name, null::uuid as task_id, w.name as workspace_name,
+               p.id::text as project_id, p.name as project_name, null::uuid as task_id, w.id as workspace_id, w.name as workspace_name,
                ts_rank(p.search, q.query) * 1.2 as rank
         from projects p join workspaces w on w.id = p.workspace_id, q
         where p.search @@ q.query and p.deleted_at is null and p.workspace_id in (${wsList})
         union all
         select 'task', t.id, t.title,
                ts_headline('simple', coalesce(nullif(t.description, ''), t.title), q.query, ${opts}),
-               p.id, p.name, t.id, w.name, ts_rank(t.search, q.query)
+               p.id::text, p.name, t.id, w.id, w.name, ts_rank(t.search, q.query)
         from tasks t join projects p on p.id = t.project_id and p.deleted_at is null join workspaces w on w.id = t.workspace_id, q
         where t.search @@ q.query and t.deleted_at is null and t.workspace_id in (${wsList})
         union all
         select 'comment', c.id, coalesce(t.title, p.name),
                ts_headline('simple', regexp_replace(c.body, '<@[0-9a-fA-F-]{36}>', '@…', 'g'), q.query, ${opts}),
-               p.id, p.name, c.task_id, w.name, ts_rank(c.search, q.query) * 0.8
+               p.id::text, p.name, c.task_id, w.id, w.name, ts_rank(c.search, q.query) * 0.8
         from comments c join projects p on p.id = c.project_id and p.deleted_at is null
              left join tasks t on t.id = c.task_id join workspaces w on w.id = c.workspace_id, q
         where c.search @@ q.query and c.deleted_at is null and (t.id is null or t.deleted_at is null) and c.workspace_id in (${wsList})
+        union all
+        select 'document', d.id, d.title,
+               ts_headline('simple', coalesce(nullif(d.body, ''), d.title), q.query, ${opts}),
+               coalesce(d.project_id::text, ''), coalesce(p.name, w.name), null::uuid, w.id, w.name, ts_rank(d.search, q.query)
+        from documents d join workspaces w on w.id = d.workspace_id left join projects p on p.id = d.project_id, q
+        where d.search @@ q.query and d.deleted_at is null and d.workspace_id in (${wsList})
       ) r
       order by rank desc, title asc
       limit ${limit}`);
@@ -57,6 +63,7 @@ export class InsightsService {
       projectId: r.project_id!,
       projectName: r.project_name!,
       taskId: r.task_id ?? null,
+      workspaceId: r.workspace_id!,
       workspaceName: r.workspace_name!,
     }));
   }

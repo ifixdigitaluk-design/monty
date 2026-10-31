@@ -55,7 +55,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
     if (!r) return;
     onClose();
     setQ('');
-    router.push(`/project?id=${r.projectId}${r.taskId ? `&task=${r.taskId}` : ''}`);
+    router.push(r.type === 'document' ? `/docs?ws=${r.workspaceId}&id=${r.id}` : `/project?id=${r.projectId}${r.taskId ? `&task=${r.taskId}` : ''}`);
   }
 
   function onKey(e: KeyboardEvent) {
@@ -79,7 +79,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
         role="combobox"
         aria-expanded={results.length > 0}
         aria-controls="search-results"
-        placeholder="Search projects, tasks and comments…"
+        placeholder="Search projects, tasks, comments and docs…"
         className="h-12 w-full border-b border-line bg-transparent px-4 text-[15px] outline-none"
         value={q}
         onChange={(e) => setQ(e.target.value)}

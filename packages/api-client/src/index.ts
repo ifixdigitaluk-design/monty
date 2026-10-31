@@ -4,6 +4,11 @@
  */
 import type {
   ActivityDto,
+  CreateDocumentInput,
+  DocumentDto,
+  DocumentSummaryDto,
+  DocumentVersionDto,
+  UpdateDocumentInput,
   CalendarEntryDto,
   HomeDto,
   SearchResultDto,
@@ -114,6 +119,17 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
+    },
+    documents: {
+      list: (workspaceId: string, projectId?: string) =>
+        request<{ documents: DocumentSummaryDto[] }>('GET', `/workspaces/${workspaceId}/documents${projectId ? `?projectId=${projectId}` : ''}`),
+      create: (workspaceId: string, input: CreateDocumentInput) =>
+        request<{ document: DocumentDto }>('POST', `/workspaces/${workspaceId}/documents`, input),
+      get: (id: string) => request<{ document: DocumentDto }>('GET', `/documents/${id}`),
+      update: (id: string, input: UpdateDocumentInput) => request<{ document: DocumentDto }>('PATCH', `/documents/${id}`, input),
+      remove: (id: string) => request<void>('DELETE', `/documents/${id}`),
+      versions: (id: string) => request<{ versions: DocumentVersionDto[] }>('GET', `/documents/${id}/versions`),
+      restore: (id: string, versionId: string) => request<{ document: DocumentDto }>('POST', `/documents/${id}/versions/${versionId}/restore`),
     },
     insights: {
       search: (q: string) => request<{ results: SearchResultDto[] }>('GET', `/search?q=${encodeURIComponent(q)}`),

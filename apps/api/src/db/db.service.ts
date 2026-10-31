@@ -90,14 +90,22 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     }
     const message = `Row-level security is NOT effective: ${problems.join('; ')}`;
     if (this.config.requireRls) {
-      await this.handle.close();
+      await this.close();
       throw new Error(message);
     }
     this.logger.warn(JSON.stringify({ msg: 'rls_inactive', problems }));
   }
 
-  async onModuleDestroy() {
+  private closed = false;
+
+  private async close() {
+    if (this.closed) return;
+    this.closed = true;
     await this.handle.close();
+  }
+
+  async onModuleDestroy() {
+    await this.close();
   }
 }
 
