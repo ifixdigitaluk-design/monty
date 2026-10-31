@@ -105,6 +105,21 @@ test('no axe violations on the main pages (desktop and phone width)', async ({ p
     await expect(page.getByText(text).first()).toBeVisible();
     results[name] = summary(await axe(page));
   }
+  // HR needs a team organisation.
+  const team = (await (await page.request.post('/api/v1/organisations', { headers, data: { name: 'Audit Team' } })).json()).organisation;
+  await page.request.post(`/api/v1/organisations/${team.id}/hr/leave`, { headers, data: { type: 'annual', startDate: today, endDate: today } }).catch(() => undefined);
+  await page.request.post(`/api/v1/organisations/${team.id}/hr/checklists`, { headers, data: { kind: 'onboarding', subjectName: 'Audit Joiner' } });
+  for (const [name, url, text] of [
+    ['hr-people', `/hr?org=${team.id}`, 'Staff directory'],
+    ['hr-person', `/hr?org=${team.id}&person=${me}`, 'Personal details'],
+    ['hr-leave', `/hr?org=${team.id}&tab=leave`, 'Who’s away'],
+    ['hr-onboarding', `/hr?org=${team.id}&tab=onboarding`, 'Onboarding: Audit Joiner'],
+    ['hr-reviews', `/hr?org=${team.id}&tab=reviews`, 'No reviews'],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText(text).first()).toBeVisible();
+    results[name] = summary(await axe(page));
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [name, url] of [['phone-home', '/home'], ['phone-calendar', '/calendar']] as const) {
     await page.goto(url);

@@ -162,6 +162,16 @@ New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retr
 | GET/POST | `/workspaces/:id/crm/activities[?mine=1&open=1]` | read / `task.update` | types `note, call, meeting, email, task`; must link to a company, contact or deal; `dueAt` makes it a follow-up (assignee notified) |
 | PATCH/DELETE | `/crm/activities/:id` | `task.update` (delete: author or workspace admin) | `{done}` marks a follow-up complete |
 
+| GET | `/organisations/:id/hr/me` · `/hr/inbox` | team org member (not guest) | my HR role, the people I manage; leave waiting for my decision |
+| GET | `/organisations/:id/hr/people` · `/people/:userId` | member | directory for all; `private` only for the person, HR admins and their management chain (salary only for the person and HR) |
+| PATCH | `/organisations/:id/hr/people/:userId` | HR admin (job fields, pay, notes); the person (own personal details) | reporting loops refused; private part encrypted at rest |
+| PUT | `/organisations/:id/hr/admins` | owner | `{userId, hrAdmin}` |
+| GET/POST | `/organisations/:id/hr/leave` | member | weekend days not counted; overlapping leave refused (409); HR may record leave for others (sickness approved at once); type shown as `away` and reasons hidden for people without access |
+| POST | `/organisations/:id/hr/leave/:id/decision` · `/cancel` | management chain or HR (never yourself) · requester or HR | |
+| GET/POST | `/organisations/:id/hr/checklists` · POST `/checklists/:id/items` · PATCH `/checklist-items/:id` · DELETE `/checklists/:id` | visible to HR, assignees, the person and their manager; HR creates; assignee or HR ticks | onboarding/offboarding templates with steps for HR, manager and IT |
+| GET/POST | `/organisations/:id/hr/people/:userId/documents` | private-details viewers / HR uploads (raw bytes, ≤10 MB) | encrypted on disk; GET `/hr/documents/:id` downloads (audited), sandboxed |
+| GET/POST/PATCH/DELETE | `/organisations/:id/hr/reviews[/:id]` | HR or the management chain write; the person reads once shared | content encrypted at rest; `share: true` locks it; private notes never returned to the person |
+
 Live updates: chat events (`event: chat`) go only to people who can see the channel; database events (`event: database`) go to the workspace. Both are pointers — clients refetch through the endpoints above. Search (`GET /search`) also returns chat messages (`type: message`) and database rows (`type: database_row`, with `databaseId`).
 
 ## Not implemented (planned)

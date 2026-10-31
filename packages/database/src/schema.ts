@@ -1041,6 +1041,148 @@ export const crmQuotes = pgTable(
   (t) => [foreignKey({ name: 'crm_quotes_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), uniqueIndex('crm_quotes_number_idx').on(t.workspaceId, t.number)],
 );
 
+// ---------- HR (organisation-wide; private details encrypted at rest) ----------
+const orgRef = () => uuid('organisation_id').notNull().references(() => organisations.id, { onDelete: 'cascade' });
+
+/** People who administer HR in an organisation (owners always can). */
+export const hrRoles = pgTable(
+  'hr_roles',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    grantedById: uuid('granted_by_id').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('hr_roles_org_user_idx').on(t.organisationId, t.userId)],
+);
+
+export const hrProfiles = pgTable(
+  'hr_profiles',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    jobTitle: text('job_title').notNull().default(''),
+    department: text('department').notNull().default(''),
+    managerId: uuid('manager_id').references(() => users.id, { onDelete: 'set null' }),
+    startDate: date('start_date'),
+    endDate: date('end_date'),
+    /** full_time | part_time | contractor | intern */
+    employmentType: text('employment_type').notNull().default('full_time'),
+    location: text('location').notNull().default(''),
+    workPhone: text('work_phone').notNull().default(''),
+    annualLeaveDays: doublePrecision('annual_leave_days').notNull().default(25),
+    /** AES-GCM JSON: personal email/phone, address, date of birth, emergency contact, salary. */
+    privateData: text('private_data'),
+    updatedById: uuid('updated_by_id').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('hr_profiles_org_user_idx').on(t.organisationId, t.userId), index('hr_profiles_manager_idx').on(t.organisationId, t.managerId)],
+);
+
+export const hrLeaveRequests = pgTable(
+  'hr_leave_requests',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** annual | sick | unpaid | parental | other */
+    type: text('type').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    halfDay: boolean('half_day').notNull().default(false),
+    days: doublePrecision('days').notNull(),
+    reason: text('reason').notNull().default(''),
+    /** pending | approved | declined | cancelled */
+    status: text('status').notNull().default('pending'),
+    decidedById: uuid('decided_by_id').references(() => users.id),
+    decidedAt: ts('decided_at'),
+    decisionNote: text('decision_note').notNull().default(''),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('hr_leave_org_dates_idx').on(t.organisationId, t.startDate), index('hr_leave_user_idx').on(t.userId)],
+);
+
+export const hrChecklists = pgTable(
+  'hr_checklists',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    /** onboarding | offboarding */
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    /** The joiner/leaver's name (they may not have an account yet). */
+    subjectName: text('subject_name').notNull(),
+    subjectUserId: uuid('subject_user_id').references(() => users.id, { onDelete: 'set null' }),
+    dueDate: date('due_date'),
+    createdById: uuid('created_by_id').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_checklists_org_idx').on(t.organisationId)],
+);
+
+export const hrChecklistItems = pgTable(
+  'hr_checklist_items',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    checklistId: uuid('checklist_id').notNull().references(() => hrChecklists.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    dueDate: date('due_date'),
+    doneAt: ts('done_at'),
+    doneById: uuid('done_by_id').references(() => users.id),
+    position: doublePrecision('position').notNull().default(0),
+  },
+  (t) => [index('hr_items_checklist_idx').on(t.checklistId), index('hr_items_assignee_idx').on(t.assigneeId)],
+);
+
+/** Private employee files (contracts etc.). Bytes are encrypted on disk with the data key. */
+export const hrDocuments = pgTable(
+  'hr_documents',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    subjectUserId: uuid('subject_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** contract | identity | certificate | review | other */
+    category: text('category').notNull().default('other'),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    uploaderId: uuid('uploader_id').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_documents_subject_idx').on(t.organisationId, t.subjectUserId)],
+);
+
+export const hrReviews = pgTable(
+  'hr_reviews',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    subjectUserId: uuid('subject_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    reviewerId: uuid('reviewer_id').notNull().references(() => users.id),
+    period: text('period').notNull(),
+    rating: integer('rating'),
+    /** AES-GCM JSON: { strengths, improvements, goals, notes }. */
+    content: text('content').notNull(),
+    /** draft | shared */
+    status: text('status').notNull().default('draft'),
+    sharedAt: ts('shared_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_reviews_subject_idx').on(t.organisationId, t.subjectUserId)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -1109,3 +1251,9 @@ export type CrmContact = typeof crmContacts.$inferSelect;
 export type CrmDeal = typeof crmDeals.$inferSelect;
 export type CrmActivity = typeof crmActivities.$inferSelect;
 export type CrmQuote = typeof crmQuotes.$inferSelect;
+export type HrProfile = typeof hrProfiles.$inferSelect;
+export type HrLeaveRequest = typeof hrLeaveRequests.$inferSelect;
+export type HrChecklist = typeof hrChecklists.$inferSelect;
+export type HrChecklistItem = typeof hrChecklistItems.$inferSelect;
+export type HrDocument = typeof hrDocuments.$inferSelect;
+export type HrReview = typeof hrReviews.$inferSelect;

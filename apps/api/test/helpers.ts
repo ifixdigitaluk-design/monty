@@ -15,6 +15,13 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 const TABLES = [
   'attachments',
   'message_reactions',
+  'hr_reviews',
+  'hr_documents',
+  'hr_checklist_items',
+  'hr_checklists',
+  'hr_leave_requests',
+  'hr_profiles',
+  'hr_roles',
   'crm_quotes',
   'crm_activities',
   'crm_deals',

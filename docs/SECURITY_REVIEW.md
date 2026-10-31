@@ -49,6 +49,17 @@ API (NestJS), web app (Next.js), database (Postgres with row-level security), co
 - `next` is limited to same-site relative paths. Failures show only a short reason code; details go to the server log.
 - Tests: `google.e2e` covers tampered nonce, audience, issuer, signature and expiry, forged state, a missing cookie, code reuse, domain allowlist and invite-only mode.
 
+## CRM and HR (added in this round)
+- **CRM:** workspace RLS and the same rules as projects (viewers read, members edit). Linked records must be in the same workspace. Quote totals are computed by the server, and quote numbers are serialised with an advisory lock.
+- **HR access:**
+  - RLS keeps HR data inside its organisation.
+  - The API decides access per person (`domain/hr.ts`, unit-tested): private details go to the person, HR admins and their management chain; pay only to the person and HR.
+  - Peers, reports and other organisations get `null`/404.
+- **HR encryption at rest:** private profile fields, review content and HR documents are encrypted with AES-GCM using the data key. Each record has its own associated data, so ciphertext can't be swapped between people.
+- **HR audit:** profile changes are audited with field names only, never values. Document uploads and views are audited.
+- **Sickness:** colleagues see only "away", without reasons.
+- **Gap:** HR admins can see everything in their organisation's HR, by design. Choose them carefully; only owners can appoint them.
+
 ## Known open items (accepted for an internal pilot)
 - The CSP still allows `'unsafe-inline'` scripts, because Next.js needs them for its inline bootstrap. Nonces are planned.
 - Rate limits are in memory per instance, so run one API instance or add Redis.

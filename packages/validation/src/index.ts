@@ -3,7 +3,7 @@
  * Request schemas are strict: unknown fields are rejected.
  */
 import { z } from 'zod';
-import { ACTIVITY_TYPES, CHOICE_COLORS, DEAL_STAGES, FIELD_TYPES, FILTER_OPS, isIsoDate, QUOTE_STATUSES } from '@monty/domain';
+import { ACTIVITY_TYPES, CHOICE_COLORS, DEAL_STAGES, EMPLOYMENT_TYPES, HR_DOC_CATEGORIES, LEAVE_TYPES, FIELD_TYPES, FILTER_OPS, isIsoDate, QUOTE_STATUSES } from '@monty/domain';
 import type { FieldType, ViewConfig } from '@monty/domain';
 
 export const isoDate = z.string().refine(isIsoDate, { message: 'Expected a date in YYYY-MM-DD format' });
@@ -435,7 +435,8 @@ export interface CommentDto {
 
 export interface NotificationDto {
   id: string;
-  type: 'mention' | 'assigned' | 'comment' | 'automation';
+  /** Also HR events: leave_request, leave_approved, leave_declined, leave_cancelled, checklist_assigned, review_shared. */
+  type: 'mention' | 'assigned' | 'comment' | 'automation' | 'leave_request' | 'leave_approved' | 'leave_declined' | 'leave_cancelled' | 'checklist_assigned' | 'review_shared';
   entityType: string;
   entityId: string;
   projectId: string | null;
@@ -1067,4 +1068,119 @@ export interface CrmSummaryDto {
   winRate: number | null;
   counts: { companies: number; contacts: number; openDeals: number };
   myFollowUps: CrmActivityDto[];
+}
+
+// ---------- HR ----------
+const hrText = (max: number) => z.string().trim().max(max);
+export const HrPrivateSchema = z.strictObject({
+  personalEmail: z.union([z.literal(''), z.email().max(320)]).optional(),
+  personalPhone: hrText(50).optional(),
+  homeAddress: hrText(500).optional(),
+  dateOfBirth: z.union([z.literal(''), isoDate]).optional(),
+  emergencyContact: hrText(300).optional(),
+  /** Annual salary in minor units. HR admins only. */
+  salary: z.int().min(0).max(100_000_000_000).nullable().optional(),
+  salaryCurrency: z.string().regex(/^[A-Z]{3}$/).optional(),
+  notes: z.string().max(5000).optional(),
+});
+export type HrPrivate = z.infer<typeof HrPrivateSchema>;
+export const UpdateHrProfileSchema = z.strictObject({
+  jobTitle: hrText(150).optional(),
+  department: hrText(100).optional(),
+  managerId: uuid.nullable().optional(),
+  startDate: isoDate.nullable().optional(),
+  endDate: isoDate.nullable().optional(),
+  employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+  location: hrText(150).optional(),
+  workPhone: hrText(50).optional(),
+  annualLeaveDays: z.number().finite().min(0).max(100).refine((n) => Math.round(n * 2) === n * 2, 'Use whole or half days').optional(),
+  private: HrPrivateSchema.optional(),
+});
+export type UpdateHrProfileInput = z.infer<typeof UpdateHrProfileSchema>;
+
+export const LeaveRequestSchema = z
+  .strictObject({
+    id: uuid.optional(),
+    type: z.enum(LEAVE_TYPES),
+    startDate: isoDate,
+    endDate: isoDate,
+    halfDay: z.boolean().optional(),
+    reason: z.string().max(1000).optional(),
+    /** HR admins can record leave for someone else (e.g. sickness reported by phone). */
+    userId: uuid.optional(),
+  })
+  .refine((r) => r.endDate >= r.startDate, { message: 'The end date is before the start date', path: ['endDate'] })
+  .refine((r) => !r.halfDay || r.startDate === r.endDate, { message: 'Half days are for single-day requests', path: ['halfDay'] });
+export type LeaveRequestInput = z.infer<typeof LeaveRequestSchema>;
+export const LeaveDecisionSchema = z.strictObject({ decision: z.enum(['approved', 'declined']), note: z.string().max(1000).optional() });
+export type LeaveDecisionInput = z.infer<typeof LeaveDecisionSchema>;
+
+export const ChecklistSchema = z.strictObject({
+  id: uuid.optional(),
+  kind: z.enum(['onboarding', 'offboarding']),
+  subjectName: name,
+  subjectUserId: uuid.nullable().optional(),
+  dueDate: isoDate.nullable().optional(),
+  /** Who does the HR, manager and IT steps of the template. */
+  assignees: z.strictObject({ hr: uuid.nullable().optional(), manager: uuid.nullable().optional(), it: uuid.nullable().optional() }).optional(),
+});
+export type ChecklistInput = z.infer<typeof ChecklistSchema>;
+export const ChecklistItemSchema = z.strictObject({ title: z.string().trim().min(1).max(300), assigneeId: uuid.nullable().optional(), dueDate: isoDate.nullable().optional() });
+export const UpdateChecklistItemSchema = z.strictObject({ title: z.string().trim().min(1).max(300).optional(), assigneeId: uuid.nullable().optional(), dueDate: isoDate.nullable().optional(), done: z.boolean().optional() });
+export type ChecklistItemInput = z.infer<typeof ChecklistItemSchema>;
+export type UpdateChecklistItemInput = z.infer<typeof UpdateChecklistItemSchema>;
+
+const reviewBody = z.string().max(20_000);
+export const ReviewSchema = z.strictObject({
+  subjectUserId: uuid,
+  period: z.string().trim().min(1, 'Required').max(100),
+  rating: z.int().min(1).max(5).nullable().optional(),
+  strengths: reviewBody.optional(),
+  improvements: reviewBody.optional(),
+  goals: reviewBody.optional(),
+  notes: reviewBody.optional(),
+});
+export const UpdateReviewSchema = ReviewSchema.omit({ subjectUserId: true }).partial().extend({ share: z.boolean().optional() });
+export type ReviewInput = z.infer<typeof ReviewSchema>;
+export type UpdateReviewInput = z.infer<typeof UpdateReviewSchema>;
+export const HrRoleSchema = z.strictObject({ userId: uuid, hrAdmin: z.boolean() });
+
+export interface HrMeDto {
+  organisationId: string;
+  isHrAdmin: boolean;
+  /** Owners choose HR admins. */
+  isOwner: boolean;
+  /** People I can approve leave for / see privately (my reports, all for HR admins). */
+  reportIds: string[];
+}
+export interface HrPersonDto {
+  userId: string; name: string; email: string;
+  jobTitle: string; department: string; manager: { id: string; name: string } | null; startDate: string | null; endDate: string | null;
+  employmentType: (typeof EMPLOYMENT_TYPES)[number]; location: string; workPhone: string; isHrAdmin: boolean;
+}
+export interface HrProfileDto extends HrPersonDto {
+  annualLeaveDays: number;
+  /** Present only for the person, HR admins and their management chain. Salary only for HR admins and the person. */
+  private: HrPrivate | null;
+  canEdit: { profile: boolean; personal: boolean; salary: boolean };
+  balance: { year: number; allowance: number; taken: number; pending: number; remaining: number; remainingAfterPending: number } | null;
+}
+export interface LeaveDto {
+  id: string; user: { id: string; name: string };
+  /** 'away' when the viewer may not see the type (e.g. sickness). */
+  type: (typeof LEAVE_TYPES)[number] | 'away';
+  startDate: string; endDate: string; halfDay: boolean; days: number;
+  reason: string | null; status: 'pending' | 'approved' | 'declined' | 'cancelled';
+  decidedBy: { id: string; name: string } | null; decisionNote: string | null; createdAt: string;
+  canDecide: boolean; canCancel: boolean;
+}
+export interface ChecklistItemDto { id: string; title: string; assignee: { id: string; name: string } | null; dueDate: string | null; doneAt: string | null; doneBy: { id: string; name: string } | null; canTick: boolean }
+export interface ChecklistDto {
+  id: string; kind: 'onboarding' | 'offboarding'; title: string; subjectName: string; subjectUserId: string | null; dueDate: string | null;
+  items: ChecklistItemDto[]; done: number; total: number; createdAt: string;
+}
+export interface HrDocumentDto { id: string; category: (typeof HR_DOC_CATEGORIES)[number]; filename: string; contentType: string; sizeBytes: number; uploader: { id: string; name: string }; createdAt: string; url: string }
+export interface ReviewDto {
+  id: string; subject: { id: string; name: string }; reviewer: { id: string; name: string }; period: string; rating: number | null;
+  strengths: string; improvements: string; goals: string; notes: string; status: 'draft' | 'shared'; sharedAt: string | null; createdAt: string; updatedAt: string; canEdit: boolean;
 }

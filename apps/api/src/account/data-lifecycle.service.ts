@@ -123,6 +123,20 @@ export class DataLifecycleService {
       select r.id, d.name as database, r.title, r.values, r.body, r.created_at, r.updated_at
       from database_rows r join databases d on d.id = r.database_id
       where r.created_by_id = ${userId} and r.deleted_at is null and d.deleted_at is null order by r.created_at`);
+    const hrProfiles = (
+      await q<{ organisation_id: string; private_data: string | null }>(sql`
+        select organisation_id, job_title, department, manager_id, start_date, end_date, employment_type, location, work_phone, annual_leave_days, private_data
+        from hr_profiles where user_id = ${userId}`)
+    ).map(({ private_data, ...p }) => {
+      let personal: Record<string, unknown> = {};
+      try {
+        personal = private_data ? (JSON.parse(decrypt(this.config.dataKey, private_data, `hr:${p.organisation_id}:${userId}`).toString()) as Record<string, unknown>) : {};
+      } catch {
+        personal = { error: 'could not be decrypted' };
+      }
+      return { ...p, personal };
+    });
+    const leave = await q(sql`select organisation_id, type, start_date, end_date, half_day, days, reason, status, decided_at, created_at from hr_leave_requests where user_id = ${userId} order by start_date`);
     const notifications = await q(sql`select type, entity_type, data, created_at, read_at from notifications where user_id = ${userId} order by created_at`);
     const aiRequests = await q(sql`select id, project_id, status, provider, input, created_at from ai_proposals where requested_by_id = ${userId}`);
     const automations = await q(sql`select id, name, trigger, conditions, actions, enabled, created_at from automation_rules where created_by_id = ${userId} and deleted_at is null`);
@@ -145,6 +159,8 @@ export class DataLifecycleService {
       comments,
       documentsCreated: documents,
       chatMessages: messages,
+      hrProfiles,
+      leaveRequests: leave,
       databaseRowsCreated: databaseRows,
       notifications,
       aiRequests,

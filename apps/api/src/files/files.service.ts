@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { canInWorkspace } from '@monty/domain';
-import { attachments } from '@monty/database';
+import { attachments, hrDocuments } from '@monty/database';
 import type { AttachmentDto } from '@monty/validation';
 import { AppException, badRequest, forbidden, notFound } from '../common/errors';
 import { AppConfig, CONFIG } from '../config';
@@ -22,7 +22,7 @@ type Row = typeof attachments.$inferSelect;
 const MAX_PER_TARGET = 100;
 
 /** Types the browser may display inline (thumbnails / previews). Everything else is downloaded, never rendered. */
-const INLINE: { type: string; magic: (b: Buffer) => boolean }[] = [
+export const INLINE: { type: string; magic: (b: Buffer) => boolean }[] = [
   { type: 'image/png', magic: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   { type: 'image/jpeg', magic: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { type: 'image/gif', magic: (b) => b.subarray(0, 6).toString('latin1') === 'GIF87a' || b.subarray(0, 6).toString('latin1') === 'GIF89a' },
@@ -71,7 +71,8 @@ export class FilesService implements OnModuleInit {
     await mkdir(path.join(this.root, 'tmp'), { recursive: true });
   }
 
-  private pathOf(key: string) {
+  /** Where a stored file lives on disk (also used by HR documents, which are encrypted before writing). */
+  pathOf(key: string) {
     return path.join(this.root, key.slice(0, 2), key);
   }
 
@@ -216,9 +217,16 @@ export class FilesService implements OnModuleInit {
           sql`(${attachments.deletedAt} < now() - interval '1 day') or (${attachments.targetType} = 'channel' and ${attachments.createdAt} < now() - interval '1 day')`,
         )
         .returning({ key: attachments.storageKey });
-      for (const d of dead) await unlink(this.pathOf(d.key)).catch(() => undefined);
+      const deadHr = await this.dbs.db
+        .delete(hrDocuments)
+        .where(sql`${hrDocuments.deletedAt} < now() - interval '1 day'`)
+        .returning({ key: hrDocuments.storageKey });
+      for (const d of [...dead, ...deadHr]) await unlink(this.pathOf(d.key)).catch(() => undefined);
       let orphans = 0;
-      const known = new Set((await this.dbs.db.select({ k: attachments.storageKey }).from(attachments)).map((r) => r.k));
+      const known = new Set([
+        ...(await this.dbs.db.select({ k: attachments.storageKey }).from(attachments)).map((r) => r.k),
+        ...(await this.dbs.db.select({ k: hrDocuments.storageKey }).from(hrDocuments)).map((r) => r.k),
+      ]);
       for (const dir of await readdir(this.root).catch(() => [] as string[])) {
         if (dir === 'tmp' || dir.length !== 2) continue;
         for (const f of await readdir(path.join(this.root, dir)).catch(() => [] as string[])) {
@@ -236,7 +244,7 @@ export class FilesService implements OnModuleInit {
         const st = await stat(path.join(tmpDir, f)).catch(() => null);
         if (st && Date.now() - st.mtimeMs > 3_600_000) await unlink(path.join(tmpDir, f)).catch(() => undefined);
       }
-      return { deleted: dead.length, orphans };
+      return { deleted: dead.length + deadHr.length, orphans };
     });
   }
 

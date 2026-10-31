@@ -22,6 +22,15 @@ function describe(n: NotificationDto): string {
   if (n.type === 'automation') {
     return `Automation “${(n.data.ruleName as string) ?? 'rule'}”: ${(n.data.message as string) ?? ''}${n.data.title ? ` — “${n.data.title as string}”` : ''}`;
   }
+  if (n.entityType === 'hr_leave') {
+    const d = n.data as { who?: string; startDate?: string; endDate?: string; days?: number };
+    const when = d.startDate ? `${d.startDate}${d.endDate && d.endDate !== d.startDate ? ` to ${d.endDate}` : ''}` : '';
+    if (n.type === 'leave_request') return `${d.who ?? who} asked for leave: ${when}${d.days ? ` (${d.days} days)` : ''}`;
+    if (n.type === 'leave_cancelled') return `${d.who ?? who} cancelled approved leave: ${when}`;
+    return `${who} ${n.type === 'leave_approved' ? 'approved' : 'declined'} your leave: ${when}`;
+  }
+  if (n.entityType === 'hr_checklist') return `${who} gave you ${(n.data.steps as number) ?? 1} step(s) in “${(n.data.title as string) ?? 'a checklist'}”`;
+  if (n.entityType === 'hr_review') return `${who} shared your review for ${(n.data.period as string) ?? 'this period'}`;
   if (n.type === 'assigned' && n.entityType === 'crm_activity') {
     const due = n.data.dueAt ? new Date(n.data.dueAt as string).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : null;
     return `${who} gave you a follow-up: “${(n.data.title as string) ?? ''}”${due ? ` (due ${due})` : ''}`;
@@ -57,6 +66,11 @@ function Inbox() {
     if (n.entityType === 'message') {
       const d = n.data as { workspaceId?: string; channelId?: string; threadId?: string | null };
       router.push(`/chat?${d.workspaceId ? `ws=${d.workspaceId}&` : ''}c=${d.channelId}${d.threadId ? `&t=${d.threadId}` : ''}`);
+      return;
+    }
+    if (n.entityType.startsWith('hr_')) {
+      const tab = n.entityType === 'hr_leave' ? 'leave' : n.entityType === 'hr_checklist' ? 'onboarding' : 'reviews';
+      router.push(`/hr?org=${n.data.organisationId as string}&tab=${tab}`);
       return;
     }
     if (n.entityType === 'crm_activity') {

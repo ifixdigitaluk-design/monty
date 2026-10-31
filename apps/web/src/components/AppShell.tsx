@@ -121,6 +121,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           {navItem('/chat', chatUnread.mentions > 0 ? `Chat (@${chatUnread.mentions})` : chatUnread.unread > 0 ? `Chat (${chatUnread.unread})` : 'Chat', pathname === '/chat')}
           {navItem('/databases', 'Databases', pathname === '/databases')}
           {navItem('/crm', 'CRM', pathname.startsWith('/crm'))}
+          {organisations.some((o) => o.kind === 'TEAM' && o.role !== 'GUEST') ? navItem('/hr', 'HR', pathname === '/hr') : null}
           {navItem('/tasks', 'My Tasks', pathname === '/tasks')}
           {navItem('/calendar', 'Calendar', pathname === '/calendar')}
         </div>

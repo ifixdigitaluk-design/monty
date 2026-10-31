@@ -6,6 +6,21 @@ import type {
   ActivityDto,
   AiProposalDto,
   AttachmentDto,
+  ChecklistDto,
+  ChecklistInput,
+  ChecklistItemInput,
+  HrDocumentDto,
+  HrMeDto,
+  HrPersonDto,
+  HrProfileDto,
+  LeaveDecisionInput,
+  LeaveDto,
+  LeaveRequestInput,
+  ReviewDto,
+  ReviewInput,
+  UpdateChecklistItemInput,
+  UpdateHrProfileInput,
+  UpdateReviewInput,
   ActivityInput,
   CompanyDto,
   CompanyInput,
@@ -251,6 +266,46 @@ export function createApiClient(opts: ApiClientOptions = {}) {
     },
     usage: (orgId: string) =>
       request<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> }>('GET', `/organisations/${orgId}/usage`),
+    hr: {
+      me: (org: string) => request<HrMeDto>('GET', `/organisations/${org}/hr/me`),
+      inbox: (org: string) => request<{ leaveToDecide: LeaveDto[]; openSteps: number }>('GET', `/organisations/${org}/hr/inbox`),
+      people: (org: string) => request<{ people: HrPersonDto[] }>('GET', `/organisations/${org}/hr/people`),
+      profile: (org: string, userId: string) => request<{ profile: HrProfileDto }>('GET', `/organisations/${org}/hr/people/${userId}`),
+      updateProfile: (org: string, userId: string, input: UpdateHrProfileInput) => request<{ profile: HrProfileDto }>('PATCH', `/organisations/${org}/hr/people/${userId}`, input),
+      setAdmin: (org: string, userId: string, hrAdmin: boolean) => request<void>('PUT', `/organisations/${org}/hr/admins`, { userId, hrAdmin }),
+      leave: (org: string, f: { from?: string; to?: string; userId?: string } = {}) =>
+        request<{ leave: LeaveDto[] }>('GET', `/organisations/${org}/hr/leave?${new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString()}`),
+      requestLeave: (org: string, input: LeaveRequestInput) => request<{ leave: LeaveDto }>('POST', `/organisations/${org}/hr/leave`, input),
+      decideLeave: (org: string, id: string, input: LeaveDecisionInput) => request<{ leave: LeaveDto }>('POST', `/organisations/${org}/hr/leave/${id}/decision`, input),
+      cancelLeave: (org: string, id: string) => request<{ leave: LeaveDto }>('POST', `/organisations/${org}/hr/leave/${id}/cancel`),
+      checklists: (org: string) => request<{ checklists: ChecklistDto[] }>('GET', `/organisations/${org}/hr/checklists`),
+      createChecklist: (org: string, input: ChecklistInput) => request<{ checklist: ChecklistDto }>('POST', `/organisations/${org}/hr/checklists`, input),
+      addChecklistItem: (org: string, id: string, input: ChecklistItemInput) => request<{ checklist: ChecklistDto }>('POST', `/organisations/${org}/hr/checklists/${id}/items`, input),
+      updateChecklistItem: (org: string, id: string, input: UpdateChecklistItemInput) => request<{ checklist: ChecklistDto }>('PATCH', `/organisations/${org}/hr/checklist-items/${id}`, input),
+      removeChecklist: (org: string, id: string) => request<void>('DELETE', `/organisations/${org}/hr/checklists/${id}`),
+      documents: (org: string, userId: string) => request<{ documents: HrDocumentDto[] }>('GET', `/organisations/${org}/hr/people/${userId}/documents`),
+      removeDocument: (org: string, id: string) => request<void>('DELETE', `/organisations/${org}/hr/documents/${id}`),
+      uploadDocument: async (org: string, userId: string, category: string, file: Blob & { name?: string }) => {
+        let res: Response;
+        try {
+          res = await fetchImpl(`${baseUrl}/organisations/${org}/hr/people/${userId}/documents?category=${encodeURIComponent(category)}`, {
+            method: 'POST',
+            headers: { 'X-Monty-Client': opts.client ?? 'web', 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name ?? 'file') },
+            body: file,
+            credentials: 'include',
+          });
+        } catch (err) {
+          throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server. Check your connection.', err);
+        }
+        const json = (await res.json().catch(() => undefined)) as { document?: HrDocumentDto } & ApiErrorBody | undefined;
+        if (!res.ok) throw new ApiError(res.status, json?.error?.code ?? 'UNKNOWN', json?.error?.message ?? `Upload failed (${res.status})`, json?.error?.details);
+        return json!.document!;
+      },
+      reviews: (org: string, userId?: string) => request<{ reviews: ReviewDto[] }>('GET', `/organisations/${org}/hr/reviews${userId ? `?userId=${userId}` : ''}`),
+      createReview: (org: string, input: ReviewInput) => request<{ review: ReviewDto }>('POST', `/organisations/${org}/hr/reviews`, input),
+      updateReview: (org: string, id: string, input: UpdateReviewInput) => request<{ review: ReviewDto }>('PATCH', `/organisations/${org}/hr/reviews/${id}`, input),
+      removeReview: (org: string, id: string) => request<void>('DELETE', `/organisations/${org}/hr/reviews/${id}`),
+    },
     crm: {
       summary: (ws: string) => request<CrmSummaryDto>('GET', `/workspaces/${ws}/crm/summary`),
       companies: (ws: string, q = '') => request<{ companies: CompanyDto[] }>('GET', `/workspaces/${ws}/crm/companies${q ? `?q=${encodeURIComponent(q)}` : ''}`),

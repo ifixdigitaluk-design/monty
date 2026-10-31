@@ -204,6 +204,20 @@
       "when": 1793470578280,
       "tag": "0028_crm_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793471757444,
+      "tag": "0029_hr",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793471758565,
+      "tag": "0030_hr_rls",
+      "breakpoints": true
     }
   ]
 }
