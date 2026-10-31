@@ -1,4 +1,5 @@
 import { Browser, expect, Page, test } from '@playwright/test';
+import { confirmSignUp } from '../helpers';
 import { Pool } from 'pg';
 
 const dbUrl = process.env.E2E_DATABASE_URL ?? 'postgresql://monty:monty_dev@localhost:5432/monty_e2e';
@@ -20,7 +21,7 @@ async function register(page: Page, name: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await confirmSignUp(page, email);
   return email;
 }
 

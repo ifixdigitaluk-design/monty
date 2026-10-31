@@ -44,6 +44,11 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
   emailVerifiedAt: ts('email_verified_at'),
+  /** TOTP secret (AES-256-GCM encrypted, base32 inside). Set during setup; active only once mfaEnabledAt is set. */
+  mfaSecret: text('mfa_secret'),
+  mfaEnabledAt: ts('mfa_enabled_at'),
+  /** Last accepted TOTP time step: a code can be used once (replay protection). */
+  mfaLastStep: integer('mfa_last_step'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   deletedAt: ts('deleted_at'),
@@ -627,6 +632,34 @@ export const dataExports = pgTable(
   },
   (t) => [index('data_exports_user_idx').on(t.userId, t.createdAt)],
 );
+
+/** Single-use recovery codes for two-factor sign-in. Only SHA-256 hashes are stored. */
+export const mfaRecoveryCodes = pgTable(
+  'mfa_recovery_codes',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    createdAt: createdAt(),
+    usedAt: ts('used_at'),
+  },
+  (t) => [index('mfa_recovery_user_idx').on(t.userId)],
+);
+
+/** Second step of a password sign-in for accounts with two-factor authentication. Short-lived, attempt-limited. */
+export const loginChallenges = pgTable('login_challenges', {
+  id: pk(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: createdAt(),
+  expiresAt: ts('expires_at').notNull(),
+  usedAt: ts('used_at'),
+});
 
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(

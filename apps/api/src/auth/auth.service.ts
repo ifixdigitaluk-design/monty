@@ -1,10 +1,14 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { hash, verify } from '@node-rs/argon2';
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { MailService } from '../mail/mail.service';
+import { accountExistsEmail, inviteOnlyEmail } from '../mail/templates';
 import { randomBytes } from 'node:crypto';
 import { ARGON_OPTS, hashToken } from './crypto';
 import {
+  invitations,
   isUniqueViolation,
+  loginChallenges,
   organisationMemberships,
   organisations,
   sessions,
@@ -14,7 +18,7 @@ import {
 } from '@monty/database';
 import type { LoginInput, RegisterInput, SessionDto, UserDto } from '@monty/validation';
 import { AppConfig, CONFIG } from '../config';
-import { AppException, conflict, notFound } from '../common/errors';
+import { AppException, notFound } from '../common/errors';
 import { randomSuffix } from '../common/slug';
 import { AuditService } from '../audit/audit.service';
 import { DbService } from '../db/db.service';
@@ -22,6 +26,7 @@ import { AccountRecoveryService } from './account-recovery.service';
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 const DAY_MS = 86_400_000;
+const MAX_FAILED_LOGINS = 10;
 
 
 
@@ -39,6 +44,7 @@ export class AuthService implements OnModuleInit {
     @Inject(CONFIG) private readonly config: AppConfig,
     private readonly audit: AuditService,
     private readonly recovery: AccountRecoveryService,
+    private readonly mail: MailService,
   ) {}
 
   async onModuleInit() {
@@ -46,8 +52,24 @@ export class AuthService implements OnModuleInit {
     this.dummyHash = await hash(randomBytes(16).toString('hex'), ARGON_OPTS);
   }
 
-  async register(input: RegisterInput, client: ClientInfo): Promise<{ user: UserDto; token: string }> {
+  /**
+   * Sign-up never reveals whether an email already has an account: the response is always "check your email".
+   * - New address (and allowed by SIGNUP_MODE): the account is created unverified and a confirmation link is emailed;
+   *   following it confirms the address and signs the user in.
+   * - Existing address: no new account; the owner is emailed a sign-in / reset link instead.
+   * - Invite-only mode without a pending invitation: the address is told an invitation is needed.
+   * Argon2 hashing runs on every path so timing is similar.
+   */
+  async register(input: RegisterInput, client: ClientInfo): Promise<void> {
     const passwordHash = await hash(input.password, ARGON_OPTS);
+    const existing = await this.dbs.db.query.users.findFirst({ where: eq(users.email, input.email) });
+    if (existing) return this.notifyExisting(existing, client);
+    if (!(await this.signupAllowed(input.email))) {
+      const day = new Date().toISOString().slice(0, 10);
+      await this.mail.enqueue(inviteOnlyEmail(input.email, this.mail.link('/login')), { idempotencyKey: `invite-only:${input.email}:${day}` });
+      await this.audit.recordSafely({ action: 'auth.register_blocked', data: { reason: 'invite_only' }, client: toClient(client) });
+      return;
+    }
     let user;
     try {
       user = await this.dbs.db.transaction(async (tx) => {
@@ -65,18 +87,51 @@ export class AuthService implements OnModuleInit {
         return u!;
       });
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('EMAIL_TAKEN', 'An account with this email already exists');
+      if (isUniqueViolation(err)) {
+        // Lost a race with a concurrent sign-up for the same address: same outcome as "already exists".
+        const other = await this.dbs.db.query.users.findFirst({ where: eq(users.email, input.email) });
+        if (other) return this.notifyExisting(other, client);
+      }
       throw err;
     }
-    const token = await this.createSession(user.id, client);
-    // Sent after commit; a mail failure must not fail sign-up (the user can resend from the app).
-    await this.recovery.sendVerification(user.id);
-    return { user: toUserDto(user), token };
+    await this.recovery.sendVerification(user.id, input.next);
   }
 
-  async login(input: LoginInput, client: ClientInfo): Promise<{ user: UserDto; token: string }> {
+  private async notifyExisting(user: typeof users.$inferSelect, client: ClientInfo) {
+    if (user.deletedAt) return;
+    const hour = Math.floor(Date.now() / 3_600_000);
+    await this.mail.enqueue(accountExistsEmail(user.email, user.name, this.mail.link('/login'), this.mail.link('/forgot-password')), {
+      idempotencyKey: `account-exists:${user.id}:${hour}`,
+      userId: user.id,
+    });
+    await this.audit.recordSafely({ actorId: user.id, action: 'auth.register_existing_email', targetType: 'user', targetId: user.id, client: toClient(client) });
+  }
+
+  private async signupAllowed(email: string): Promise<boolean> {
+    if (this.config.signupMode === 'open') return true;
+    return this.dbs.runAsSystem(async () => {
+      const [anyUser] = await this.dbs.db.select({ id: users.id }).from(users).limit(1);
+      if (!anyUser) return true; // bootstrap: the very first account
+      const [inv] = await this.dbs.db
+        .select({ id: invitations.id })
+        .from(invitations)
+        .where(and(eq(invitations.email, email), isNull(invitations.acceptedAt), isNull(invitations.revokedAt), gt(invitations.expiresAt, new Date())))
+        .limit(1);
+      return !!inv;
+    });
+  }
+
+  /**
+   * Password sign-in. Accounts must have confirmed their email (unconfirmed ones get a fresh link, rate-limited).
+   * Accounts with two-factor authentication get a short-lived challenge instead of a session.
+   */
+  async login(input: LoginInput, client: ClientInfo): Promise<{ user: UserDto; token: string } | { mfaToken: string }> {
     const user = await this.dbs.db.query.users.findFirst({ where: eq(users.email, input.email) });
-    const valid = await verify(user?.passwordHash ?? this.dummyHash, input.password);
+    // Per-account brute-force protection (the IP rate limit doesn't stop distributed guessing).
+    if (user && (await this.recentFailures(user.id)) >= MAX_FAILED_LOGINS) {
+      throw new AppException(429, 'RATE_LIMITED', 'Too many sign-in attempts. Wait 15 minutes, or reset your password.');
+    }
+    const valid = await verify(user?.passwordHash && user.passwordHash !== '!' ? user.passwordHash : this.dummyHash, input.password).catch(() => false);
     if (!user || user.deletedAt || !valid) {
       await this.audit.recordSafely({
         actorId: user?.id ?? null,
@@ -87,12 +142,41 @@ export class AuthService implements OnModuleInit {
       });
       throw new AppException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
     }
+    if (!user.emailVerifiedAt) {
+      await this.recovery.sendVerification(user.id, undefined, { cooldown: true });
+      throw new AppException(403, 'EMAIL_NOT_VERIFIED', 'Confirm your email address first. We’ve sent you a new link — it signs you in.');
+    }
+    if (user.mfaEnabledAt) {
+      const mfaToken = randomBytes(32).toString('base64url');
+      await this.dbs.db.insert(loginChallenges).values({ userId: user.id, tokenHash: hashToken(mfaToken), expiresAt: new Date(Date.now() + 5 * 60_000) });
+      await this.audit.recordSafely({ actorId: user.id, action: 'auth.login_mfa_challenge', targetType: 'user', targetId: user.id, client: toClient(client) });
+      return { mfaToken };
+    }
     const token = await this.createSession(user.id, client);
     await this.audit.recordSafely({ actorId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id, client: toClient(client) });
     return { user: toUserDto(user), token };
   }
 
-  private async createSession(userId: string, client: ClientInfo): Promise<string> {
+  private async recentFailures(userId: string): Promise<number> {
+    return this.dbs.runAsSystem(async () => {
+      const r = await this.dbs.db.execute<{ n: number }>(
+        sql`select count(*)::int as n from audit_logs where actor_id = ${userId} and action in ('auth.login_failed', 'auth.login_mfa_failed') and created_at > now() - interval '15 minutes'
+            and created_at > coalesce((select max(created_at) from audit_logs where actor_id = ${userId} and action in ('auth.login', 'auth.password_reset')), 'epoch')`,
+      );
+      return r.rows[0]?.n ?? 0;
+    });
+  }
+
+  /** Signs in after the emailed confirmation link (not for accounts with two-factor authentication). */
+  async sessionAfterVerification(userId: string, client: ClientInfo): Promise<{ user: UserDto; token: string }> {
+    const user = await this.dbs.db.query.users.findFirst({ where: and(eq(users.id, userId), isNull(users.deletedAt)) });
+    if (!user) throw notFound('User');
+    const token = await this.createSession(user.id, client);
+    await this.audit.recordSafely({ actorId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id, data: { via: 'email_link' }, client: toClient(client) });
+    return { user: toUserDto(user), token };
+  }
+
+  async createSession(userId: string, client: ClientInfo): Promise<string> {
     const token = randomBytes(32).toString('base64url');
     await this.dbs.db.insert(sessions).values({
       userId,
@@ -163,8 +247,8 @@ export class AuthService implements OnModuleInit {
   }
 }
 
-export function toUserDto(u: { id: string; email: string; name: string; emailVerifiedAt: Date | null }): UserDto {
-  return { id: u.id, email: u.email, name: u.name, emailVerified: u.emailVerifiedAt !== null };
+export function toUserDto(u: { id: string; email: string; name: string; emailVerifiedAt: Date | null; mfaEnabledAt?: Date | null }): UserDto {
+  return { id: u.id, email: u.email, name: u.name, emailVerified: u.emailVerifiedAt !== null, mfaEnabled: !!u.mfaEnabledAt };
 }
 
 function toClient(c: ClientInfo) {

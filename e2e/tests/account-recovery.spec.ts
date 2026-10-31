@@ -1,4 +1,5 @@
 import { expect, Page, request, test } from '@playwright/test';
+import { confirmSignUp } from '../helpers';
 
 const API = 'http://localhost:4100/api/v1';
 const unique = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -26,20 +27,46 @@ async function register(page: Page, email: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await confirmSignUp(page, email);
 }
 
-test('email verification from the sign-up email', async ({ page }) => {
+test('sign-up: check your email, unconfirmed sign-in is refused, the emailed link confirms and signs in', async ({ page }) => {
   const email = `rosa-${unique()}@example.com`;
-  await register(page, email);
-  const banner = page.getByRole('region', { name: 'Email confirmation' });
-  await expect(banner).toContainText(email);
+  await page.goto('/register');
+  await page.getByLabel('Name').fill('Rosa');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password').fill('correct-horse-battery');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Go to sign in' }).click();
+  await page.getByLabel('Password').fill('correct-horse-battery');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByText(/Confirm your email address first/)).toBeVisible();
 
   await page.goto(await latestLink(email, 'email_verification', '/verify-email'));
-  await expect(page.getByText('your email address is confirmed')).toBeVisible();
-  await page.getByRole('link', { name: 'Continue to Monty' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
-  await expect(banner).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Email confirmation' })).toHaveCount(0);
+});
+
+test('signing up with an email that already has an account looks the same and emails the owner', async ({ page }) => {
+  const email = `twice-${unique()}@example.com`;
+  await register(page, email);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.goto('/register');
+  await page.getByLabel('Name').fill('Impostor');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password').fill('some-other-password');
+  await page.getByRole('button', { name: 'Create account' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  const ctx = await request.newContext();
+  for (let i = 0; i < 30; i++) {
+    const { messages } = (await (await ctx.get(`${API}/dev/mailbox?to=${encodeURIComponent(email)}`)).json()) as { messages: { kind: string }[] };
+    if (messages.some((m) => m.kind === 'account_exists')) break;
+    await new Promise((r) => setTimeout(r, 100));
+    if (i === 29) throw new Error('no account_exists email');
+  }
+  await ctx.dispose();
 });
 
 test('forgot password → email link → new password → old sessions signed out', async ({ page, browser }) => {

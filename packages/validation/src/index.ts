@@ -16,12 +16,26 @@ export type Priority = z.infer<typeof PriorityEnum>;
 export type ProjectLifecycle = z.infer<typeof ProjectLifecycleEnum>;
 
 // ---------- auth ----------
+function SafeNextSchema() {
+  return z
+    .string()
+    .max(500)
+    .regex(/^\/(?![/\\])[A-Za-z0-9\-._~/?=&%]*$/, 'Must be a relative path');
+}
+
 export const RegisterSchema = z.strictObject({
   email: z.email().max(320).transform((e) => e.toLowerCase()),
   name: name,
   password: z.string().min(10, 'Use at least 10 characters').max(200),
+  /** Where to go after the emailed confirmation link signs the user in (relative path only). */
+  next: SafeNextSchema().optional(),
 });
 export type RegisterInput = z.infer<typeof RegisterSchema>;
+/** Same response whether or not the email already has an account (no account enumeration). */
+export interface RegisterResultDto {
+  status: 'check_email';
+  message: string;
+}
 
 export const LoginSchema = z.strictObject({
   email: z.email().max(320).transform((e) => e.toLowerCase()),
@@ -188,6 +202,44 @@ export interface UserDto {
   email: string;
   name: string;
   emailVerified: boolean;
+  mfaEnabled: boolean;
+}
+
+// ---------- two-factor authentication ----------
+export const TotpCodeSchema = z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code from your authenticator app');
+export const RecoveryCodeSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9]{4}-?[a-z0-9]{4}-?[a-z0-9]{4}$/, 'Recovery codes look like abcd-efgh-ijkl')
+  .transform((c) => c.replace(/-/g, ''));
+/** Login either completes (`user`) or asks for a second factor (`mfaRequired` + short-lived `mfaToken`). */
+export type LoginResultDto = { user: UserDto; mfaRequired?: false } | { mfaRequired: true; mfaToken: string };
+export const LoginMfaSchema = z
+  .strictObject({
+    mfaToken: z.string().regex(/^[A-Za-z0-9_-]{20,100}$/),
+    code: TotpCodeSchema.optional(),
+    recoveryCode: RecoveryCodeSchema.optional(),
+  })
+  .refine((v) => !!v.code !== !!v.recoveryCode, { message: 'Enter a code or a recovery code', path: ['code'] });
+export type LoginMfaInput = z.infer<typeof LoginMfaSchema>;
+export const MfaSetupSchema = z.strictObject({ password: z.string().min(1).max(200) });
+export const MfaEnableSchema = z.strictObject({ code: TotpCodeSchema });
+export const MfaDisableSchema = z
+  .strictObject({ password: z.string().min(1).max(200), code: TotpCodeSchema.optional(), recoveryCode: RecoveryCodeSchema.optional() })
+  .refine((v) => !!v.code !== !!v.recoveryCode, { message: 'Enter a code or a recovery code', path: ['code'] });
+export type MfaDisableInput = z.infer<typeof MfaDisableSchema>;
+export interface MfaSetupDto {
+  /** Base32 secret for manual entry. */
+  secret: string;
+  otpauthUrl: string;
+  /** SVG QR code as a data: URL. */
+  qrSvgDataUrl: string;
+}
+export interface MfaStatusDto {
+  enabled: boolean;
+  enabledAt: string | null;
+  recoveryCodesRemaining: number;
 }
 
 export interface WorkspaceSummaryDto {

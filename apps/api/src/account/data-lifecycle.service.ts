@@ -221,6 +221,8 @@ export class DataLifecycleService {
       // 3. Personal and security data.
       await db.execute(sql`delete from sessions where user_id = ${userId}`);
       await db.execute(sql`delete from user_tokens where user_id = ${userId}`);
+      await db.execute(sql`delete from login_challenges where user_id = ${userId}`);
+      await db.execute(sql`delete from mfa_recovery_codes where user_id = ${userId}`);
       await db.execute(sql`delete from data_exports where user_id = ${userId}`);
       await db.execute(sql`delete from email_outbox where user_id = ${userId} or lower(to_address) = lower(${user.email})`);
       // Account-level security events (sign-ins, resets…) are deleted; organisation audit entries keep the action and
@@ -234,7 +236,7 @@ export class DataLifecycleService {
       // 4. The user row stays as a tombstone so foreign keys (authorship) remain valid; nothing identifying is kept.
       await db
         .update(users)
-        .set({ email: `deleted-${userId}@deleted.invalid`, name: 'Deleted user', passwordHash: '!', emailVerifiedAt: null, deletedAt: new Date() })
+        .set({ email: `deleted-${userId}@deleted.invalid`, name: 'Deleted user', passwordHash: '!', emailVerifiedAt: null, mfaSecret: null, mfaEnabledAt: null, mfaLastStep: null, deletedAt: new Date() })
         .where(eq(users.id, userId));
       await this.audit.record({ actorId: userId, action: 'account.deleted', targetType: 'user', targetId: userId, data: { erasedOrganisations: solo.rows.length } });
       this.logger.log(JSON.stringify({ msg: 'account_deleted', erasedOrganisations: solo.rows.length }));

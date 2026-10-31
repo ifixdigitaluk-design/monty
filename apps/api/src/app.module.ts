@@ -5,6 +5,7 @@ import { RequestContextInterceptor } from './db/request-context.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { MfaService } from './auth/mfa.service';
 import { Public } from './common/auth-context';
 import { CsrfGuard, SessionGuard } from './common/guards';
 import { AppConfig, CONFIG } from './config';
@@ -102,6 +103,7 @@ export class AppModule {
       providers: [
         { provide: CONFIG, useValue: config },
         AuthService,
+        MfaService,
         AuditService,
         MailService,
         AccountRecoveryService,

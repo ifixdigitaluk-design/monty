@@ -1,4 +1,5 @@
 import { Browser, expect, Page, test } from '@playwright/test';
+import { confirmSignUp } from '../helpers';
 
 const unique = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
@@ -8,7 +9,7 @@ async function register(page: Page, name: string, email: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await confirmSignUp(page, email);
 }
 
 /** Owner creates a team org and project; the teammate joins through an invitation link. */

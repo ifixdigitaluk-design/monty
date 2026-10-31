@@ -40,6 +40,8 @@ const EnvSchema = z.object({
   METRICS_TOKEN: z.string().min(24).optional().or(z.literal('').transform(() => undefined)),
   /** Optional HTTPS endpoint receiving a JSON POST per unhandled server error (error-tracker intake). */
   ERROR_WEBHOOK_URL: z.url().optional().or(z.literal('').transform(() => undefined)),
+  /** 'open': anyone can sign up. 'invite': only addresses with a pending invitation (plus the very first account). */
+  SIGNUP_MODE: z.enum(['open', 'invite']).default('open'),
   /** Version identifier shown in metrics and error reports (e.g. the git commit). */
   RELEASE: z.string().max(100).default('dev'),
   /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
@@ -80,6 +82,7 @@ export interface AppConfig {
   metricsToken?: string;
   errorWebhookUrl?: string;
   release: string;
+  signupMode: 'open' | 'invite';
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -156,6 +159,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     metricsToken: e.METRICS_TOKEN,
     errorWebhookUrl: e.ERROR_WEBHOOK_URL,
     release: e.RELEASE,
+    signupMode: e.SIGNUP_MODE,
   };
 }
 

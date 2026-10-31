@@ -5,6 +5,11 @@
 import type {
   ActivityDto,
   AiProposalDto,
+  LoginMfaInput,
+  LoginResultDto,
+  MfaSetupDto,
+  MfaStatusDto,
+  RegisterResultDto,
   AutomationRuleDto,
   CreatedDataExportDto,
   DataExportDto,
@@ -111,8 +116,14 @@ export function createApiClient(opts: ApiClientOptions = {}) {
 
   return {
     auth: {
-      register: (input: RegisterInput) => request<{ user: UserDto }>('POST', '/auth/register', input),
-      login: (input: LoginInput) => request<{ user: UserDto }>('POST', '/auth/login', input),
+      register: (input: RegisterInput) => request<RegisterResultDto>('POST', '/auth/register', input),
+      login: (input: LoginInput) => request<LoginResultDto>('POST', '/auth/login', input),
+      loginMfa: (input: LoginMfaInput) => request<{ user: UserDto }>('POST', '/auth/login/mfa', input),
+      mfaStatus: () => request<MfaStatusDto>('GET', '/auth/mfa'),
+      mfaSetup: (password: string) => request<MfaSetupDto>('POST', '/auth/mfa/setup', { password }),
+      mfaEnable: (code: string) => request<{ recoveryCodes: string[] }>('POST', '/auth/mfa/enable', { code }),
+      mfaDisable: (input: { password: string; code?: string; recoveryCode?: string }) => request<void>('POST', '/auth/mfa/disable', input),
+      mfaRecoveryCodes: (code: string) => request<{ recoveryCodes: string[] }>('POST', '/auth/mfa/recovery-codes', { code }),
       logout: () => request<void>('POST', '/auth/logout'),
       me: () => request<{ user: UserDto }>('GET', '/auth/me'),
       sessions: () => request<{ sessions: SessionDto[] }>('GET', '/auth/sessions'),
@@ -120,7 +131,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       requestPasswordReset: (email: string) => request<{ message: string }>('POST', '/auth/password-reset', { email }),
       confirmPasswordReset: (token: string, password: string) =>
         request<void>('POST', '/auth/password-reset/confirm', { token, password }),
-      verifyEmail: (token: string) => request<void>('POST', '/auth/verify-email', { token }),
+      verifyEmail: (token: string) => request<{ verified: true; signedIn: boolean; user?: UserDto }>('POST', '/auth/verify-email', { token }),
       resendVerification: () => request<{ sent: boolean }>('POST', '/auth/verify-email/resend'),
     },
     account: {

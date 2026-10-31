@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { hash } from '@node-rs/argon2';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { DbOrTx, sessions, users, userTokens } from '@monty/database';
 import type { ConfirmPasswordResetInput, RequestPasswordResetInput } from '@monty/validation';
 import { AuditService, ClientInfo } from '../audit/audit.service';
@@ -11,7 +11,8 @@ import { passwordResetEmail, verifyEmailEmail } from '../mail/templates';
 import { ARGON_OPTS, hashToken, newSecret } from './crypto';
 
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
-const VERIFY_TTL_MS = 7 * 86_400_000; // 7 days
+const VERIFY_TTL_MS = 48 * 3_600_000; // 48 hours: the link also signs the user in
+const RESEND_COOLDOWN_MS = 5 * 60_000;
 
 type Purpose = 'PASSWORD_RESET' | 'EMAIL_VERIFICATION';
 
@@ -61,24 +62,36 @@ export class AccountRecoveryService {
   // ---------- email verification ----------
 
   /** Issues a verification link and queues the email in the same transaction (durable; retried if the provider is down). */
-  async sendVerification(userId: string): Promise<boolean> {
+  async sendVerification(userId: string, next?: string, opts: { cooldown?: boolean } = {}): Promise<boolean> {
     const user = await this.dbs.db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user || user.deletedAt || user.emailVerifiedAt) return false;
+    if (opts.cooldown) {
+      // Repeated sign-in attempts before confirming must not send a burst of emails.
+      const [recent] = await this.dbs.db
+        .select({ id: userTokens.id })
+        .from(userTokens)
+        .where(and(eq(userTokens.userId, userId), eq(userTokens.purpose, 'EMAIL_VERIFICATION'), gt(userTokens.createdAt, new Date(Date.now() - RESEND_COOLDOWN_MS))))
+        .limit(1);
+      if (recent) return false;
+    }
+    const nextParam = next ? `&next=${encodeURIComponent(next)}` : '';
     return this.dbs.db.transaction(async (tx) => {
       const t = await this.issue(tx, user.id, user.email, 'EMAIL_VERIFICATION', VERIFY_TTL_MS);
       return this.mail.enqueue(
-        verifyEmailEmail(user.email, user.name, this.mail.link(`/verify-email?token=${t.token}`)),
+        verifyEmailEmail(user.email, user.name, this.mail.link(`/verify-email?token=${t.token}${nextParam}`)),
         { idempotencyKey: `verify:${t.id}`, userId: user.id, expiresAt: t.expiresAt },
         tx,
       );
     });
   }
 
-  async verifyEmail(rawToken: string, client: ClientInfo): Promise<void> {
-    await this.dbs.db.transaction(async (tx) => {
+  /** Confirms the address. Returns the user so the caller can sign them in (the link proves inbox access). */
+  async verifyEmail(rawToken: string, client: ClientInfo): Promise<{ userId: string; mfaEnabled: boolean }> {
+    return this.dbs.db.transaction(async (tx) => {
       const { user } = await this.consume(tx, rawToken, 'EMAIL_VERIFICATION');
       if (!user.emailVerifiedAt) await tx.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, user.id));
       await this.audit.record({ actorId: user.id, action: 'auth.email_verified', targetType: 'user', targetId: user.id, client }, tx);
+      return { userId: user.id, mfaEnabled: !!user.mfaEnabledAt };
     });
   }
 
