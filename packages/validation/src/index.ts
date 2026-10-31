@@ -63,6 +63,9 @@ export type CreateOrganisationInput = z.infer<typeof CreateOrganisationSchema>;
 
 export const CreateWorkspaceSchema = z.strictObject({ name });
 export type CreateWorkspaceInput = z.infer<typeof CreateWorkspaceSchema>;
+export const SetPlanSchema = z.strictObject({ plan: z.enum(['FREE', 'PRO', 'TEAM', 'BUSINESS', 'ENTERPRISE']) });
+export const RenameWorkspaceSchema = z.strictObject({ name });
+export const DeleteWorkspaceSchema = z.strictObject({ confirmName: z.string().max(200) });
 
 // ---------- projects ----------
 const projectFields = {
@@ -436,7 +439,7 @@ export interface CommentDto {
 export interface NotificationDto {
   id: string;
   /** Also HR events: leave_request, leave_approved, leave_declined, leave_cancelled, checklist_assigned, review_shared. */
-  type: 'mention' | 'assigned' | 'comment' | 'automation' | 'leave_request' | 'leave_approved' | 'leave_declined' | 'leave_cancelled' | 'checklist_assigned' | 'review_shared';
+  type: 'mention' | 'assigned' | 'comment' | 'automation' | 'leave_request' | 'leave_approved' | 'leave_declined' | 'leave_cancelled' | 'checklist_assigned' | 'review_shared' | 'meeting';
   entityType: string;
   entityId: string;
   projectId: string | null;
@@ -759,6 +762,8 @@ export interface ChannelDto {
   mentions: number;
   lastMessageAt: string | null;
   archived: boolean;
+  /** Whether I can rename, archive or delete it (creator, workspace admin, org owner/admin). */
+  canManage: boolean;
 }
 export interface MessageDto {
   id: string;
@@ -1183,4 +1188,33 @@ export interface HrDocumentDto { id: string; category: (typeof HR_DOC_CATEGORIES
 export interface ReviewDto {
   id: string; subject: { id: string; name: string }; reviewer: { id: string; name: string }; period: string; rating: number | null;
   strengths: string; improvements: string; goals: string; notes: string; status: 'draft' | 'shared'; sharedAt: string | null; createdAt: string; updatedAt: string; canEdit: boolean;
+}
+
+// ---------- meetings ----------
+const meetingUrl = z.union([z.literal(''), z.string().max(500).regex(/^https:\/\/\S+$/i, 'Use an https:// link')]);
+const actionItem = z.strictObject({ id: z.string().min(1).max(40), text: z.string().trim().min(1).max(500), assigneeId: uuid.nullable(), done: z.boolean() });
+export const MeetingSchema = z.strictObject({
+  id: uuid.optional(),
+  title: name,
+  startsAt: z.iso.datetime({ offset: true }),
+  durationMinutes: z.int().min(5).max(24 * 60).optional(),
+  /** Leave empty for an automatic free Jitsi link; or paste your own Google Meet / Teams / Zoom link. */
+  videoUrl: meetingUrl.optional(),
+  location: z.string().trim().max(200).optional(),
+  agenda: z.string().max(20_000).optional(),
+  attendeeIds: z.array(uuid).max(200).optional(),
+});
+export const UpdateMeetingSchema = MeetingSchema.omit({ id: true }).partial().extend({
+  minutes: z.string().max(100_000).optional(),
+  actionItems: z.array(actionItem).max(100).optional(),
+  cancelled: z.boolean().optional(),
+});
+export type MeetingInput = z.infer<typeof MeetingSchema>;
+export type UpdateMeetingInput = z.infer<typeof UpdateMeetingSchema>;
+export interface MeetingDto {
+  id: string; workspaceId: string; title: string; startsAt: string; endsAt: string; durationMinutes: number;
+  videoUrl: string; location: string; agenda: string; minutes: string;
+  organizer: { id: string; name: string }; attendees: { id: string; name: string }[];
+  actionItems: { id: string; text: string; assigneeId: string | null; done: boolean }[];
+  cancelled: boolean; canEdit: boolean; createdAt: string; updatedAt: string;
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { clientOf } from './members.controller';
 import {
@@ -6,6 +6,8 @@ import {
   CreateOrganisationSchema,
   CreateWorkspaceInput,
   CreateWorkspaceSchema,
+  DeleteWorkspaceSchema,
+  RenameWorkspaceSchema,
 } from '@monty/validation';
 import { Auth, AuthContext } from '../common/auth-context';
 import { UuidPipe, ZodPipe } from '../common/pipes';
@@ -37,5 +39,22 @@ export class OrganisationsController {
     @Req() req: Request,
   ) {
     return { workspace: await this.orgs.createWorkspace(auth.userId, orgId, body, clientOf(req)) };
+  }
+}
+
+/** Rename or delete a workspace (department): organisation owners and admins. */
+@Controller('workspaces')
+export class WorkspacesController {
+  constructor(private readonly orgs: OrganisationsService) {}
+
+  @Patch(':workspaceId')
+  async renameWorkspace(@Auth() auth: AuthContext, @Param('workspaceId', UuidPipe) id: string, @Body(new ZodPipe(RenameWorkspaceSchema)) body: { name: string }, @Req() req: Request) {
+    return { workspace: await this.orgs.renameWorkspace(auth.userId, id, body.name, clientOf(req)) };
+  }
+
+  @Delete(':workspaceId')
+  @HttpCode(204)
+  async deleteWorkspace(@Auth() auth: AuthContext, @Param('workspaceId', UuidPipe) id: string, @Body(new ZodPipe(DeleteWorkspaceSchema)) body: { confirmName: string }, @Req() req: Request) {
+    await this.orgs.deleteWorkspace(auth.userId, id, body.confirmName, clientOf(req));
   }
 }

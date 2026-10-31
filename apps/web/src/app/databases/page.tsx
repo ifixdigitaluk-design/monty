@@ -332,8 +332,22 @@ function DatabaseScreen({ id, workspaceId, onListChanged, onDeleted }: { id: str
 
   return (
     <div className="p-4 md:p-6">
-      <header className="mb-3">
+      <header className="relative mb-3 pr-36">
         <h1 className="sr-only">{db.name}</h1>
+        <div className="absolute right-0 top-0">
+          {canStructure ? (
+              <Button
+                variant="ghost"
+                className="text-danger"
+                onClick={() => {
+                  if (!window.confirm(`Delete the database “${db.name}” and all ${db.rows.length} rows? This can't be undone from the app.`)) return;
+                  api.databases.remove(db.id).then(onDeleted, fail);
+                }}
+              >
+                Delete database
+              </Button>
+            ) : null}
+        </div>
         <input
           aria-label="Database name"
           className="w-full bg-transparent text-2xl font-semibold outline-none"
@@ -418,6 +432,11 @@ function DatabaseScreen({ id, workspaceId, onListChanged, onDeleted }: { id: str
           onTitle={onTitle}
           onOpen={(rid) => setParam('row', rid)}
           onAddRow={() => void addRow()}
+          onDeleteRow={(row) => {
+            if (!window.confirm(`Delete “${row.title || 'Untitled'}”?`)) return;
+            setDb((cur) => (cur ? { ...cur, rows: cur.rows.filter((r) => r.id !== row.id) } : cur));
+            api.databases.removeRow(row.id).then(onListChanged, fail);
+          }}
           onEditField={(f) => setFieldDialog(f)}
           onAddField={() => setFieldDialog('new')}
         />

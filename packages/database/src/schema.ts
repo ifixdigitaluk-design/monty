@@ -1183,6 +1183,33 @@ export const hrReviews = pgTable(
   (t) => [index('hr_reviews_subject_idx').on(t.organisationId, t.subjectUserId)],
 );
 
+/** Meetings in a workspace (department): time, attendees, video link, agenda, minutes, action items. */
+export const meetings = pgTable(
+  'meetings',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    title: text('title').notNull(),
+    startsAt: ts('starts_at').notNull(),
+    durationMinutes: integer('duration_minutes').notNull().default(30),
+    videoUrl: text('video_url').notNull().default(''),
+    location: text('location').notNull().default(''),
+    agenda: text('agenda').notNull().default(''),
+    minutes: text('minutes').notNull().default(''),
+    attendeeIds: jsonb('attendee_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    actionItems: jsonb('action_items').$type<{ id: string; text: string; assigneeId: string | null; done: boolean }[]>().notNull().default(sql`'[]'::jsonb`),
+    organizerId: uuid('organizer_id').notNull().references(() => users.id),
+    cancelledAt: ts('cancelled_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'meetings_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('meetings_ws_start_idx').on(t.workspaceId, t.startsAt),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -1257,3 +1284,4 @@ export type HrChecklist = typeof hrChecklists.$inferSelect;
 export type HrChecklistItem = typeof hrChecklistItems.$inferSelect;
 export type HrDocument = typeof hrDocuments.$inferSelect;
 export type HrReview = typeof hrReviews.$inferSelect;
+export type Meeting = typeof meetings.$inferSelect;

@@ -22,6 +22,7 @@ const TABLES = [
   'hr_leave_requests',
   'hr_profiles',
   'hr_roles',
+  'meetings',
   'crm_quotes',
   'crm_activities',
   'crm_deals',

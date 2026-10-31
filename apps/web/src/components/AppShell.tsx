@@ -119,6 +119,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           {navItem('/home', 'Home', pathname === '/home')}
           {navItem('/inbox', unread > 0 ? `Inbox (${unread})` : 'Inbox', pathname === '/inbox')}
           {navItem('/chat', chatUnread.mentions > 0 ? `Chat (@${chatUnread.mentions})` : chatUnread.unread > 0 ? `Chat (${chatUnread.unread})` : 'Chat', pathname === '/chat')}
+          {navItem('/meetings', 'Meetings', pathname === '/meetings')}
           {navItem('/databases', 'Databases', pathname === '/databases')}
           {navItem('/crm', 'CRM', pathname.startsWith('/crm'))}
           {organisations.some((o) => o.kind === 'TEAM' && o.role !== 'GUEST') ? navItem('/hr', 'HR', pathname === '/hr') : null}

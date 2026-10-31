@@ -97,6 +97,12 @@ export class ChatController {
     return this.chat.thread(a.userId, id);
   }
 
+  @Delete('channels/:id')
+  @HttpCode(204)
+  async deleteChannel(@Auth() a: AuthContext, @Param('id', UuidPipe) id: string) {
+    await this.chat.deleteChannel(a.userId, id);
+  }
+
   @Patch('messages/:id')
   async edit(@Auth() a: AuthContext, @Param('id', UuidPipe) id: string, @Body(new ZodPipe(EditMessageSchema)) body: { body: string }) {
     return { message: await this.chat.edit(a.userId, id, body.body) };

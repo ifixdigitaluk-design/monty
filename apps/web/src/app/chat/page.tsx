@@ -76,9 +76,12 @@ function Chat() {
 
   // Open the first channel (or the general one) when none is selected.
   useEffect(() => {
-    if (!channels || channelId) return;
-    const first = channels.find((c) => c.isMember && c.kind !== 'dm') ?? channels[0];
+    if (!channels) return;
+    // Also move on when the open channel disappears (deleted, or access removed).
+    if (channelId && channels.some((c) => c.id === channelId)) return;
+    const first = channels.find((c) => c.isMember && c.kind !== 'dm' && !c.archived) ?? channels[0];
     if (first) go({ c: first.id, t: null });
+    else if (channelId) go({ c: null, t: null });
   }, [channels, channelId, go]);
 
   useLiveEvents(ws, null, {
@@ -114,7 +117,7 @@ function Chat() {
         ) : null}
         <div className="mt-3 flex items-center justify-between">
           <h2 className="text-[12px] font-medium uppercase tracking-wide text-muted">Channels</h2>
-          <Button variant="ghost" aria-label="New channel" onClick={() => setCreating('channel')}>+</Button>
+          <Button variant="ghost" className="h-7 px-2 text-accent" aria-label="New channel" onClick={() => setCreating('channel')}>+ New</Button>
         </div>
         <ul>
           {rooms.map((c) => <ChannelLink key={c.id} c={c} active={c.id === channelId} onOpen={() => go({ c: c.id, t: null })} />)}
@@ -122,7 +125,7 @@ function Chat() {
         </ul>
         <div className="mt-4 flex items-center justify-between">
           <h2 className="text-[12px] font-medium uppercase tracking-wide text-muted">Direct messages</h2>
-          <Button variant="ghost" aria-label="New direct message" onClick={() => setCreating('dm')}>+</Button>
+          <Button variant="ghost" className="h-7 px-2 text-accent" aria-label="New direct message" onClick={() => setCreating('dm')}>+ New</Button>
         </div>
         <ul>
           {dms.map((c) => <ChannelLink key={c.id} c={c} active={c.id === channelId} onOpen={() => go({ c: c.id, t: null })} />)}
@@ -150,10 +153,10 @@ function Chat() {
       )}
 
       {creating === 'channel' ? (
-        <NewChannel workspaceId={ws} members={members.filter((m) => m.id !== user.id)} onClose={() => setCreating(null)} onCreated={(c) => { setCreating(null); void loadChannels(); go({ c: c.id, t: null }); }} />
+        <NewChannel workspaceId={ws} members={members.filter((m) => m.id !== user.id)} onClose={() => setCreating(null)} onCreated={(c) => { setCreating(null); setChannels((all) => (all && !all.some((x) => x.id === c.id) ? [...all, c] : all)); void loadChannels(); go({ c: c.id, t: null }); }} />
       ) : null}
       {creating === 'dm' ? (
-        <NewDm workspaceId={ws} members={members.filter((m) => m.id !== user.id)} onClose={() => setCreating(null)} onOpened={(c) => { setCreating(null); void loadChannels(); go({ c: c.id, t: null }); }} />
+        <NewDm workspaceId={ws} members={members.filter((m) => m.id !== user.id)} onClose={() => setCreating(null)} onOpened={(c) => { setCreating(null); setChannels((all) => (all && !all.some((x) => x.id === c.id) ? [...all, c] : all)); void loadChannels(); go({ c: c.id, t: null }); }} />
       ) : null}
     </div>
   );
@@ -623,6 +626,7 @@ function ChannelDetails({ channel, members, onClose, onChanged }: { channel: Cha
   const toast = useToast();
   const [list, setList] = useState<{ id: string; name: string; role: string }[] | null>(null);
   const [topic, setTopic] = useState(channel.topic);
+  const [name, setName] = useState(channel.name);
   const [add, setAdd] = useState('');
   const load = useCallback(async () => setList((await api.chat.members(channel.id)).members), [channel.id]);
   useEffect(() => {
@@ -642,7 +646,18 @@ function ChannelDetails({ channel, members, onClose, onChanged }: { channel: Cha
   return (
     <Modal open onClose={onClose} title={`#${channel.name}`}>
       <div className="space-y-4">
-        <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); void run(() => api.chat.updateChannel(channel.id, { topic }), 'Topic saved'); }}>
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api.chat.updateChannel(channel.id, { ...(name.trim() && name !== channel.name ? { name } : {}), topic }), 'Channel saved');
+          }}
+        >
+          {channel.canManage ? (
+            <Field label="Channel name" htmlFor="det-name">
+              <Input id="det-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+            </Field>
+          ) : null}
           <Field label="Topic" htmlFor="det-topic">
             <Input id="det-topic" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={250} />
           </Field>
@@ -654,7 +669,7 @@ function ChannelDetails({ channel, members, onClose, onChanged }: { channel: Cha
             {list?.map((m) => (
               <li key={m.id} className="flex items-center justify-between py-0.5">
                 <span>{m.name} {m.role === 'admin' ? <Badge>admin</Badge> : null}</span>
-                {channel.role === 'admin' && m.role !== 'admin' ? (
+                {channel.canManage && m.role !== 'admin' ? (
                   <button type="button" className="text-danger hover:underline" onClick={() => void run(() => api.chat.removeMember(channel.id, m.id))}>Remove</button>
                 ) : null}
               </li>
@@ -674,10 +689,22 @@ function ChannelDetails({ channel, members, onClose, onChanged }: { channel: Cha
         </section>
         <div className="flex flex-wrap gap-2 border-t border-line pt-3">
           {channel.isMember ? <Button onClick={() => void run(() => api.chat.leave(channel.id), 'You left the channel').then(onClose)}>Leave channel</Button> : null}
-          {channel.role === 'admin' ? (
-            <Button variant="danger" onClick={() => void run(() => api.chat.updateChannel(channel.id, { archived: !channel.archived }), channel.archived ? 'Channel restored' : 'Channel archived').then(onClose)}>
-              {channel.archived ? 'Unarchive' : 'Archive channel'}
-            </Button>
+          {channel.canManage ? (
+            <>
+              <Button onClick={() => void run(() => api.chat.updateChannel(channel.id, { archived: !channel.archived }), channel.archived ? 'Channel restored' : 'Channel archived').then(onClose)}>
+                {channel.archived ? 'Unarchive' : 'Archive channel'}
+              </Button>
+              <Button
+                variant="danger"
+                className="ml-auto"
+                onClick={() => {
+                  if (window.prompt(`This deletes #${channel.name} and all its messages for everyone. Type the channel name to confirm:`)?.trim().replace(/^#/, '') !== channel.name) return;
+                  void run(() => api.chat.deleteChannel(channel.id), 'Channel deleted').then(onClose);
+                }}
+              >
+                Delete channel
+              </Button>
+            </>
           ) : null}
         </div>
       </div>

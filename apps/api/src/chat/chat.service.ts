@@ -13,6 +13,7 @@ import {
   UpdateChannelInput,
 } from '@monty/validation';
 import { badRequest, conflict, forbidden, notFound } from '../common/errors';
+import { AuditService } from '../audit/audit.service';
 import { CollaborationService } from '../collaboration/collaboration.service';
 import { DbService } from '../db/db.service';
 import { AccessService } from '../tenancy/access.service';
@@ -35,6 +36,7 @@ export class ChatService {
     private readonly dbs: DbService,
     private readonly access: AccessService,
     private readonly collab: CollaborationService,
+    private readonly audit: AuditService,
   ) {}
 
   // ---------- helpers ----------
@@ -79,7 +81,8 @@ export class ChatService {
   // ---------- channels ----------
 
   async list(userId: string, workspaceId: string): Promise<ChannelDto[]> {
-    await this.access.requireWorkspace(userId, workspaceId, 'workspace.read');
+    const { role: wsRole } = await this.access.requireWorkspace(userId, workspaceId, 'workspace.read');
+    const wsAdmin = canInWorkspace(wsRole, 'workspace.manage');
     // RLS already limits this to public channels + the user's private channels and DMs.
     const rows = await this.dbs.db.execute<{
       id: string; kind: ChannelDto['kind']; name: string | null; topic: string; archived_at: string | null; role: 'member' | 'admin' | null;
@@ -121,8 +124,21 @@ export class ChatService {
         mentions: r.mentions,
         lastMessageAt: r.last_message_at ? new Date(r.last_message_at).toISOString() : null,
         archived: r.archived_at !== null,
+        // Channel creator, workspace admins and organisation owners/admins can rename, archive or delete it.
+        canManage: r.kind !== 'dm' && (r.role === 'admin' || wsAdmin),
       };
     });
+  }
+
+  /** Permanently deletes a channel with its messages; its files are removed by the nightly clean-up. */
+  async deleteChannel(userId: string, channelId: string): Promise<void> {
+    const { ch, ws, member } = await this.visibleChannel(userId, channelId);
+    if (ch.kind === 'dm') throw badRequest('Direct messages can’t be deleted.');
+    if (member?.role !== 'admin' && !canInWorkspace(ws.role, 'workspace.manage')) throw forbidden('Only the channel creator or a workspace admin can delete this channel.');
+    await this.emit(ch, 'channel.updated', { actorId: userId });
+    await this.dbs.db.execute(sql`update attachments set deleted_at = now() where channel_id = ${ch.id} and deleted_at is null`);
+    await this.dbs.db.delete(channels).where(eq(channels.id, ch.id));
+    await this.audit.recordSafely({ organisationId: ch.organisationId, actorId: userId, action: 'chat.channel_deleted', targetType: 'channel', targetId: ch.id, data: { name: ch.name } });
   }
 
   private async dto(userId: string, channelId: string): Promise<ChannelDto> {

@@ -6,6 +6,9 @@ import type {
   ActivityDto,
   AiProposalDto,
   AttachmentDto,
+  MeetingDto,
+  MeetingInput,
+  UpdateMeetingInput,
   ChecklistDto,
   ChecklistInput,
   ChecklistItemInput,
@@ -195,6 +198,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       updateChannel: (id: string, input: UpdateChannelInput) => request<{ channel: ChannelDto }>('PATCH', `/channels/${id}`, input),
       join: (id: string) => request<{ channel: ChannelDto }>('POST', `/channels/${id}/join`),
       leave: (id: string) => request<void>('POST', `/channels/${id}/leave`),
+      deleteChannel: (id: string) => request<void>('DELETE', `/channels/${id}`),
       members: (id: string) => request<{ members: { id: string; name: string; role: string }[] }>('GET', `/channels/${id}/members`),
       addMembers: (id: string, userIds: string[]) => request<{ channel: ChannelDto }>('POST', `/channels/${id}/members`, { userIds }),
       removeMember: (id: string, userId: string) => request<void>('DELETE', `/channels/${id}/members/${userId}`),
@@ -245,6 +249,8 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       pendingDeletion: () => request<{ organisations: PendingOrganisationDeletionDto[] }>('GET', '/organisations/pending-deletion'),
       restore: (orgId: string) => request<void>('POST', `/organisations/${orgId}/restore`),
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
+      renameWorkspace: (workspaceId: string, name: string) => request<{ workspace: WorkspaceSummaryDto }>('PATCH', `/workspaces/${workspaceId}`, { name }),
+      deleteWorkspace: (workspaceId: string, confirmName: string) => request<void>('DELETE', `/workspaces/${workspaceId}`, { confirmName }),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
     },
@@ -264,8 +270,19 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       remove: (id: string) => request<void>('DELETE', `/automations/${id}`),
       runs: (id: string) => request<{ runs: AutomationRunDto[] }>('GET', `/automations/${id}/runs`),
     },
+    setPlan: (orgId: string, plan: 'FREE' | 'PRO' | 'TEAM' | 'BUSINESS' | 'ENTERPRISE') =>
+      request<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> }>('PUT', `/organisations/${orgId}/plan`, { plan }),
     usage: (orgId: string) =>
       request<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> }>('GET', `/organisations/${orgId}/usage`),
+    meetings: {
+      list: (ws: string, from?: string, to?: string) =>
+        request<{ meetings: MeetingDto[] }>('GET', `/workspaces/${ws}/meetings?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString()}`),
+      create: (ws: string, input: MeetingInput) => request<{ meeting: MeetingDto }>('POST', `/workspaces/${ws}/meetings`, input),
+      get: (id: string) => request<{ meeting: MeetingDto }>('GET', `/meetings/${id}`),
+      update: (id: string, input: UpdateMeetingInput) => request<{ meeting: MeetingDto }>('PATCH', `/meetings/${id}`, input),
+      remove: (id: string) => request<void>('DELETE', `/meetings/${id}`),
+      icsUrl: (id: string) => `${baseUrl}/meetings/${id}/ics`,
+    },
     hr: {
       me: (org: string) => request<HrMeDto>('GET', `/organisations/${org}/hr/me`),
       inbox: (org: string) => request<{ leaveToDecide: LeaveDto[]; openSteps: number }>('GET', `/organisations/${org}/hr/inbox`),

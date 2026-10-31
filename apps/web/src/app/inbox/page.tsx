@@ -29,6 +29,14 @@ function describe(n: NotificationDto): string {
     if (n.type === 'leave_cancelled') return `${d.who ?? who} cancelled approved leave: ${when}`;
     return `${who} ${n.type === 'leave_approved' ? 'approved' : 'declined'} your leave: ${when}`;
   }
+  if (n.entityType === 'meeting') {
+    const d = n.data as { title?: string; startsAt?: string; why?: string; actionItem?: string };
+    const when = d.startsAt ? new Date(d.startsAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    if (d.actionItem) return `${who} gave you an action from “${d.title}”: ${d.actionItem}`;
+    if (d.why === 'cancelled') return `${who} cancelled “${d.title}” (${when})`;
+    if (d.why === 'changed') return `${who} moved “${d.title}” to ${when}`;
+    return `${who} invited you to “${d.title}” — ${when}`;
+  }
   if (n.entityType === 'hr_checklist') return `${who} gave you ${(n.data.steps as number) ?? 1} step(s) in “${(n.data.title as string) ?? 'a checklist'}”`;
   if (n.entityType === 'hr_review') return `${who} shared your review for ${(n.data.period as string) ?? 'this period'}`;
   if (n.type === 'assigned' && n.entityType === 'crm_activity') {
@@ -66,6 +74,10 @@ function Inbox() {
     if (n.entityType === 'message') {
       const d = n.data as { workspaceId?: string; channelId?: string; threadId?: string | null };
       router.push(`/chat?${d.workspaceId ? `ws=${d.workspaceId}&` : ''}c=${d.channelId}${d.threadId ? `&t=${d.threadId}` : ''}`);
+      return;
+    }
+    if (n.entityType === 'meeting') {
+      router.push(`/meetings?ws=${n.data.workspaceId as string}&id=${n.entityId}`);
       return;
     }
     if (n.entityType.startsWith('hr_')) {

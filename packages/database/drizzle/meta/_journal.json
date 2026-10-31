@@ -218,6 +218,20 @@
       "when": 1793471758565,
       "tag": "0030_hr_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793486944929,
+      "tag": "0031_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793486946168,
+      "tag": "0032_meetings_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -500,6 +500,16 @@ export class MembersService {
     return this.entitlements.summary(organisationId);
   }
 
+  /** Owners choose the plan (no payment step: Monty runs as a self-hosted internal tool). */
+  async setPlan(actorId: string, organisationId: string, plan: 'FREE' | 'PRO' | 'TEAM' | 'BUSINESS' | 'ENTERPRISE', client: ClientInfo = {}) {
+    const { role } = await this.orgContext(actorId, organisationId);
+    if (role !== 'OWNER') throw forbidden('Only organisation owners can change the plan.');
+    const [before] = await this.dbs.db.select({ plan: organisations.plan }).from(organisations).where(eq(organisations.id, organisationId));
+    await this.dbs.db.update(organisations).set({ plan }).where(eq(organisations.id, organisationId));
+    await this.audit.record({ organisationId, actorId, action: 'organisation.plan_changed', targetType: 'organisation', targetId: organisationId, data: { from: before?.plan, to: plan }, client });
+    return this.entitlements.summary(organisationId);
+  }
+
   async auditLog(actorId: string, organisationId: string) {
     const { role } = await this.orgContext(actorId, organisationId);
     if (!canInOrg(role, 'org.manage')) throw forbidden();

@@ -23,8 +23,8 @@ export interface NotifyInput {
   organisationId: string;
   workspaceId: string;
   projectId: string | null;
-  type: 'mention' | 'assigned' | 'comment' | 'automation';
-  entityType: 'task' | 'comment' | 'message' | 'crm_activity';
+  type: 'mention' | 'assigned' | 'comment' | 'automation' | 'meeting';
+  entityType: 'task' | 'comment' | 'message' | 'crm_activity' | 'meeting';
   entityId: string;
   data: Record<string, unknown>;
   dedupeKey: string;

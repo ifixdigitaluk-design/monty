@@ -172,6 +172,12 @@ New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retr
 | GET/POST | `/organisations/:id/hr/people/:userId/documents` | private-details viewers / HR uploads (raw bytes, ≤10 MB) | encrypted on disk; GET `/hr/documents/:id` downloads (audited), sandboxed |
 | GET/POST/PATCH/DELETE | `/organisations/:id/hr/reviews[/:id]` | HR or the management chain write; the person reads once shared | content encrypted at rest; `share: true` locks it; private notes never returned to the person |
 
+| DELETE | `/channels/:id` | channel creator, workspace admin or org owner/admin | deletes the channel and its messages; `ChannelDto.canManage` says who may |
+| PATCH/DELETE | `/workspaces/:id` | org owner/admin | rename `{name}`; delete `{confirmName}` (not personal, not the last one) |
+| PUT | `/organisations/:id/plan` | owner | `{plan}`: FREE, PRO, TEAM, BUSINESS or ENTERPRISE (no payment; audited) |
+| GET/POST | `/workspaces/:id/meetings[?from&to]` | read / `task.create` | empty `videoUrl` = automatic Jitsi link; attendees must be workspace members and are notified |
+| GET/PATCH/DELETE | `/meetings/:id` | read / organiser or workspace admin (attendees: `minutes`, `actionItems` only) | `cancelled: true` notifies attendees; GET `/meetings/:id/ics` = calendar file |
+
 Live updates: chat events (`event: chat`) go only to people who can see the channel; database events (`event: database`) go to the workspace. Both are pointers — clients refetch through the endpoints above. Search (`GET /search`) also returns chat messages (`type: message`) and database rows (`type: database_row`, with `databaseId`).
 
 ## Not implemented (planned)

@@ -48,8 +48,9 @@ export function TableView({
   onAddRow,
   onEditField,
   onAddField,
+  onDeleteRow,
   total,
-}: Common & { canStructure: boolean; onAddRow: () => void; onEditField: (f: DatabaseFieldDto) => void; onAddField: () => void; total: number }) {
+}: Common & { canStructure: boolean; onAddRow: () => void; onEditField: (f: DatabaseFieldDto) => void; onAddField: () => void; onDeleteRow?: (row: DatabaseRowDto) => void; total: number }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-line bg-surface">
       <table className="w-full min-w-max border-collapse text-[13px]">
@@ -89,6 +90,15 @@ export function TableView({
                   >
                     {r.hasBody ? '📄' : 'Open'}
                   </button>
+                  {canEdit && onDeleteRow ? (
+                    <button
+                      className="mr-1 shrink-0 rounded px-1 py-0.5 text-[12px] text-muted hover:bg-surface hover:text-danger"
+                      aria-label={`Delete ${r.title || 'Untitled'}`}
+                      onClick={() => onDeleteRow(r)}
+                    >
+                      ✕
+                    </button>
+                  ) : null}
                 </div>
               </th>
               {fields.map((f) => (

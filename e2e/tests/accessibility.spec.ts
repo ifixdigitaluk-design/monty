@@ -57,6 +57,7 @@ test('no axe violations on the main pages (desktop and phone width)', async ({ p
     ['account', '/settings/account'],
     ['chat', `/chat?ws=${ws.split('id=')[1]}`],
     ['databases-empty', `/databases?ws=${ws.split('id=')[1]}`],
+    ['meetings', `/meetings?ws=${ws.split('id=')[1]}`],
   ];
   for (const [name, url] of pages) {
     await page.goto(url);
