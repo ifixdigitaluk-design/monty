@@ -165,7 +165,7 @@ function Invitations({ orgId, workspaces }: { orgId: string; workspaces: { id: s
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? '');
   const [workspaceRole, setWorkspaceRole] = useState<WorkspaceRoleValue>('MEMBER');
   const [busy, setBusy] = useState(false);
-  const [link, setLink] = useState<{ email: string; url: string } | null>(null);
+  const [link, setLink] = useState<{ email: string; url: string; emailSent: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -187,7 +187,7 @@ function Invitations({ orgId, workspaces }: { orgId: string; workspaces: { id: s
         workspaceId: workspaceId || null,
         workspaceRole: workspaceId ? workspaceRole : null,
       });
-      setLink({ email: invitation.email, url: `${window.location.origin}${invitation.invitePath}` });
+      setLink({ email: invitation.email, url: `${window.location.origin}${invitation.invitePath}`, emailSent: invitation.emailSent });
       setEmail('');
       void load();
     } catch (err) {
@@ -249,7 +249,12 @@ function Invitations({ orgId, workspaces }: { orgId: string; workspaces: { id: s
         {link ? (
           <div className="rounded-lg bg-surface-2 p-3" data-invite-link>
             <p className="text-[13px]">
-              Send this link to <strong>{link.email}</strong>. It works once, only for that email address, and expires in 7 days. It won’t be shown again.
+              {link.emailSent ? (
+                <>We’ve emailed an invitation to <strong>{link.email}</strong>. You can also share this link directly. </>
+              ) : (
+                <>We couldn’t send the email. Send this link to <strong>{link.email}</strong> yourself. </>
+              )}
+              It works once, only for that email address, and expires in 7 days. It won’t be shown again.
             </p>
             <div className="mt-2 flex gap-2">
               <Input readOnly aria-label="Invitation link" value={link.url} onFocus={(e) => e.target.select()} className="h-8 font-mono text-[12px]" />
@@ -265,7 +270,6 @@ function Invitations({ orgId, workspaces }: { orgId: string; workspaces: { id: s
                 Copy
               </Button>
             </div>
-            <p className="mt-2 text-[12px] text-muted">Email delivery of invitations is not set up yet.</p>
           </div>
         ) : null}
       </form>

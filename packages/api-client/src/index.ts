@@ -94,6 +94,11 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       me: () => request<{ user: UserDto }>('GET', '/auth/me'),
       sessions: () => request<{ sessions: SessionDto[] }>('GET', '/auth/sessions'),
       revokeSession: (id: string) => request<void>('DELETE', `/auth/sessions/${id}`),
+      requestPasswordReset: (email: string) => request<{ message: string }>('POST', '/auth/password-reset', { email }),
+      confirmPasswordReset: (token: string, password: string) =>
+        request<void>('POST', '/auth/password-reset/confirm', { token, password }),
+      verifyEmail: (token: string) => request<void>('POST', '/auth/verify-email', { token }),
+      resendVerification: () => request<{ sent: boolean }>('POST', '/auth/verify-email/resend'),
     },
     organisations: {
       list: () => request<{ organisations: OrganisationDto[] }>('GET', '/organisations'),

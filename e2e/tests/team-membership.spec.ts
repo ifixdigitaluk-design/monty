@@ -5,7 +5,7 @@ const unique = () => `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 async function register(page: Page, name: string, email: string) {
   await page.goto('/register');
   await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -29,7 +29,7 @@ test('invite a teammate → they sign up from the link → access, roles, audit,
   // Invite Bob as member of the General workspace.
   await page.getByRole('link', { name: 'Members & settings' }).click();
   await page.getByRole('tab', { name: 'Invitations' }).click();
-  await page.getByLabel('Email').fill(bobEmail);
+  await page.getByLabel('Email', { exact: true }).fill(bobEmail);
   await page.getByLabel('Organisation role').selectOption('MEMBER');
   await page.getByLabel('Add to workspace').selectOption({ label: 'General' });
   await page.getByLabel('Workspace role').selectOption('MEMBER');
@@ -44,7 +44,7 @@ test('invite a teammate → they sign up from the link → access, roles, audit,
   await bob.goto(inviteUrl);
   await expect(bob.getByRole('heading', { name: 'Join Northwind Studio' })).toBeVisible();
   await bob.getByRole('link', { name: 'Create account' }).click();
-  await expect(bob.getByLabel('Email')).toHaveValue(bobEmail);
+  await expect(bob.getByLabel('Email', { exact: true })).toHaveValue(bobEmail);
   await bob.getByLabel('Name').fill('Bob');
   await bob.getByLabel('Password').fill('correct-horse-battery');
   await bob.getByRole('button', { name: 'Create account' }).click();
@@ -98,7 +98,7 @@ test('an invitation cannot be accepted from a different account', async ({ page,
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByRole('link', { name: 'Members & settings' }).click();
   await page.getByRole('tab', { name: 'Invitations' }).click();
-  await page.getByLabel('Email').fill(`intended-${unique()}@example.com`);
+  await page.getByLabel('Email', { exact: true }).fill(`intended-${unique()}@example.com`);
   await page.getByRole('button', { name: 'Create invitation' }).click();
   const inviteUrl = await page.getByLabel('Invitation link').inputValue();
 

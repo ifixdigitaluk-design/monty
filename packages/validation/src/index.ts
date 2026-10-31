@@ -29,6 +29,19 @@ export const LoginSchema = z.strictObject({
 });
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+export const RequestPasswordResetSchema = z.strictObject({
+  email: z.email().max(320).transform((e) => e.toLowerCase()),
+});
+export const OneTimeTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{20,100}$/, 'Invalid or expired link');
+export const ConfirmPasswordResetSchema = z.strictObject({
+  token: OneTimeTokenSchema,
+  password: z.string().min(10, 'Use at least 10 characters').max(200),
+});
+export const VerifyEmailSchema = z.strictObject({ token: OneTimeTokenSchema });
+export type RequestPasswordResetInput = z.infer<typeof RequestPasswordResetSchema>;
+export type ConfirmPasswordResetInput = z.infer<typeof ConfirmPasswordResetSchema>;
+export type VerifyEmailInput = z.infer<typeof VerifyEmailSchema>;
+
 // ---------- organisations / workspaces ----------
 export const CreateOrganisationSchema = z.strictObject({ name });
 export type CreateOrganisationInput = z.infer<typeof CreateOrganisationSchema>;
@@ -154,6 +167,7 @@ export interface UserDto {
   id: string;
   email: string;
   name: string;
+  emailVerified: boolean;
 }
 
 export interface WorkspaceSummaryDto {
@@ -283,6 +297,8 @@ export interface InvitationDto {
 export interface CreatedInvitationDto extends InvitationDto {
   /** Relative accept link containing the one-time token. Returned once; never retrievable again. */
   invitePath: string;
+  /** Whether the invitation email was handed to the mail provider. The link can always be shared manually. */
+  emailSent: boolean;
 }
 
 export interface InvitationPreviewDto {

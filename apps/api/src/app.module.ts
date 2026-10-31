@@ -17,6 +17,8 @@ import { OrganisationsService } from './tenancy/organisations.service';
 import { AuditService } from './audit/audit.service';
 import { MembersController } from './tenancy/members.controller';
 import { MembersService } from './tenancy/members.service';
+import { AccountRecoveryService } from './auth/account-recovery.service';
+import { DevMailboxController, MailService } from './mail/mail.service';
 
 @Controller('health')
 class HealthController {
@@ -40,11 +42,21 @@ export class AppModule {
         ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: config.rateLimit }]),
         DbModule,
       ],
-      controllers: [HealthController, AuthController, OrganisationsController, ProjectsController, MembersController],
+      controllers: [
+        HealthController,
+        AuthController,
+        OrganisationsController,
+        ProjectsController,
+        MembersController,
+        // Development-only mailbox: never registered in production or with a real mail provider.
+        ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
+      ],
       providers: [
         { provide: CONFIG, useValue: config },
         AuthService,
         AuditService,
+        MailService,
+        AccountRecoveryService,
         MembersService,
         AccessService,
         OrganisationsService,

@@ -35,6 +35,8 @@ export default defineConfig({
         LOG_LEVEL: 'warn',
         AUTH_RATE_LIMIT: '1000',
         NODE_ENV: 'development',
+        APP_URL: 'http://localhost:3100',
+        MAIL_TRANSPORT: 'log',
       },
     },
     {

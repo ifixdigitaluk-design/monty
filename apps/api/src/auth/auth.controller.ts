@@ -1,7 +1,19 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { LoginInput, LoginSchema, RegisterInput, RegisterSchema } from '@monty/validation';
+import {
+  ConfirmPasswordResetInput,
+  ConfirmPasswordResetSchema,
+  LoginInput,
+  LoginSchema,
+  RegisterInput,
+  RegisterSchema,
+  RequestPasswordResetInput,
+  RequestPasswordResetSchema,
+  VerifyEmailInput,
+  VerifyEmailSchema,
+} from '@monty/validation';
+import { AccountRecoveryService } from './account-recovery.service';
 import { AppConfig, CONFIG, getConfig } from '../config';
 import { Auth, AuthContext, Public } from '../common/auth-context';
 import { UuidPipe, ZodPipe } from '../common/pipes';
@@ -14,7 +26,41 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     @Inject(CONFIG) private readonly config: AppConfig,
+    private readonly recovery: AccountRecoveryService,
   ) {}
+
+  /** Always 202 with the same body, whether or not the email has an account. */
+  @Public()
+  @Throttle(authThrottle)
+  @Post('password-reset')
+  @HttpCode(202)
+  async requestReset(@Body(new ZodPipe(RequestPasswordResetSchema)) body: RequestPasswordResetInput, @Req() req: Request) {
+    await this.recovery.requestPasswordReset(body, clientInfo(req));
+    return { message: 'If an account exists for that email, we have sent a reset link.' };
+  }
+
+  @Public()
+  @Throttle(authThrottle)
+  @Post('password-reset/confirm')
+  @HttpCode(204)
+  async confirmReset(@Body(new ZodPipe(ConfirmPasswordResetSchema)) body: ConfirmPasswordResetInput, @Req() req: Request) {
+    await this.recovery.confirmPasswordReset(body, clientInfo(req));
+  }
+
+  @Public()
+  @Throttle(authThrottle)
+  @Post('verify-email')
+  @HttpCode(204)
+  async verifyEmail(@Body(new ZodPipe(VerifyEmailSchema)) body: VerifyEmailInput, @Req() req: Request) {
+    await this.recovery.verifyEmail(body.token, clientInfo(req));
+  }
+
+  @Throttle(authThrottle)
+  @Post('verify-email/resend')
+  @HttpCode(202)
+  async resendVerification(@Auth() auth: AuthContext) {
+    return { sent: await this.recovery.sendVerification(auth.userId) };
+  }
 
   @Public()
   @Throttle(authThrottle)

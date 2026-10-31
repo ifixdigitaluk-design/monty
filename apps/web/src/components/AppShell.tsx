@@ -42,6 +42,7 @@ function Shell({ children }: { children: ReactNode }) {
           </Button>
           <span className="ml-2 font-semibold">Monty</span>
         </header>
+        <VerifyBanner />
         <main id="main" className="min-w-0 flex-1">
           {children}
         </main>
@@ -197,5 +198,37 @@ function NameModal(props: {
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** Reminds unverified users to confirm their email (needed for password recovery to be trustworthy). */
+function VerifyBanner() {
+  const { user } = useSession();
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  if (user.emailVerified) return null;
+  return (
+    <div role="region" aria-label="Email confirmation" className="flex flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-4 py-2 text-[13px]">
+      <span>Please confirm your email address ({user.email}). We sent you a link when you signed up.</span>
+      {state === 'sent' ? (
+        <span className="text-success">New link sent.</span>
+      ) : (
+        <Button
+          variant="ghost"
+          busy={state === 'sending'}
+          onClick={async () => {
+            setState('sending');
+            try {
+              await api.auth.resendVerification();
+              setState('sent');
+            } catch {
+              setState('error');
+            }
+          }}
+        >
+          Resend link
+        </Button>
+      )}
+      {state === 'error' ? <span className="text-danger">Couldn’t send — try again shortly.</span> : null}
+    </div>
   );
 }

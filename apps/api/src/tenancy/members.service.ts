@@ -37,6 +37,8 @@ import { AuditService, ClientInfo } from '../audit/audit.service';
 import { AppException, badRequest, conflict, forbidden, notFound } from '../common/errors';
 import { DbService } from '../db/db.service';
 import { AccessService } from './access.service';
+import { MailService } from '../mail/mail.service';
+import { invitationEmail } from '../mail/templates';
 
 const INVITE_TTL_DAYS = 7;
 const WS_RANK: Record<WorkspaceRole, number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 };
@@ -59,6 +61,7 @@ export class MembersService {
     private readonly dbs: DbService,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   // ---------- helpers ----------
@@ -342,9 +345,14 @@ export class MembersService {
         return inv!;
       });
       const [inviter] = await this.dbs.db.select({ name: users.name }).from(users).where(eq(users.id, actorId));
+      const invitePath = `/invite?token=${token}`;
+      const emailSent = await this.mail.send(
+        invitationEmail(input.email, inviter?.name ?? 'A teammate', org.name, input.role, this.mail.link(invitePath)),
+      );
       return {
         ...this.toInvitationDto(inv, inviter?.name ?? '', workspaceName),
-        invitePath: `/invite?token=${token}`,
+        invitePath,
+        emailSent,
       };
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict('CONFLICT', 'An invitation for this email is already pending.');

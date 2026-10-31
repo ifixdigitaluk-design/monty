@@ -67,6 +67,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             {error}
           </p>
         ) : null}
+        {mode === 'login' ? (
+          <p className="text-right text-[13px]">
+            <Link className="text-accent underline" href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}>
+              Forgot password?
+            </Link>
+          </p>
+        ) : null}
         <Button type="submit" variant="primary" className="w-full" busy={busy}>
           {mode === 'login' ? 'Sign in' : 'Create account'}
         </Button>

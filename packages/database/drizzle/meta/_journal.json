@@ -15,6 +15,13 @@
       "when": 1793408611455,
       "tag": "0001_invitations_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793429769474,
+      "tag": "0002_user_tokens",
+      "breakpoints": true
     }
   ]
 }

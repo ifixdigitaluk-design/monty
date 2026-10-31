@@ -8,7 +8,7 @@ test('capture key screens', async ({ page }) => {
   await page.goto('/register');
   await page.screenshot({ path: 'screenshots/01-register.png' });
   await page.getByLabel('Name').fill('Priya');
-  await page.getByLabel('Email').fill(`priya-${Date.now()}@example.com`);
+  await page.getByLabel('Email', { exact: true }).fill(`priya-${Date.now()}@example.com`);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -65,7 +65,7 @@ test('capture key screens', async ({ page }) => {
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.getByRole('link', { name: 'Members & settings' }).click();
   await page.getByRole('tab', { name: 'Invitations' }).click();
-  await page.getByLabel('Email').fill('sam@example.com');
+  await page.getByLabel('Email', { exact: true }).fill('sam@example.com');
   await page.getByRole('button', { name: 'Create invitation' }).click();
   await expect(page.getByLabel('Invitation link')).toBeVisible();
   await page.screenshot({ path: 'screenshots/09-invitations.png', fullPage: true });

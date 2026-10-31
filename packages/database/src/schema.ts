@@ -33,6 +33,7 @@ export const organisationRole = pgEnum('organisation_role', ['OWNER', 'ADMIN', '
 export const workspaceRole = pgEnum('workspace_role', ['ADMIN', 'MEMBER', 'VIEWER']);
 export const projectLifecycle = pgEnum('project_lifecycle', ['DRAFT', 'ACTIVE', 'IN_REVIEW', 'COMPLETED', 'CANCELLED']);
 export const priority = pgEnum('priority', ['NONE', 'LOW', 'MEDIUM', 'HIGH', 'URGENT']);
+export const userTokenPurpose = pgEnum('user_token_purpose', ['PASSWORD_RESET', 'EMAIL_VERIFICATION']);
 export const taskStatus = pgEnum('task_status', ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE', 'CANCELLED']);
 
 export const users = pgTable('users', {
@@ -40,6 +41,7 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
+  emailVerifiedAt: ts('email_verified_at'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   deletedAt: ts('deleted_at'),
@@ -309,6 +311,25 @@ export const invitations = pgTable(
   ],
 );
 
+/** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
+export const userTokens = pgTable(
+  'user_tokens',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purpose: userTokenPurpose('purpose').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** The address the token was sent to; verification only counts if it still matches the account email. */
+    email: text('email').notNull(),
+    createdAt: createdAt(),
+    expiresAt: ts('expires_at').notNull(),
+    usedAt: ts('used_at'),
+  },
+  (t) => [index('user_tokens_user_idx').on(t.userId, t.purpose)],
+);
+
 /** Security and administration events. Separate from product activity; append-only. */
 export const auditLogs = pgTable(
   'audit_logs',
@@ -340,3 +361,4 @@ export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type UserToken = typeof userTokens.$inferSelect;

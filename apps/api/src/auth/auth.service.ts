@@ -1,7 +1,8 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { hash, verify } from '@node-rs/argon2';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { ARGON_OPTS, hashToken } from './crypto';
 import {
   isUniqueViolation,
   organisationMemberships,
@@ -17,12 +18,12 @@ import { AppException, conflict, notFound } from '../common/errors';
 import { randomSuffix } from '../common/slug';
 import { AuditService } from '../audit/audit.service';
 import { DbService } from '../db/db.service';
+import { AccountRecoveryService } from './account-recovery.service';
 
-const ARGON_OPTS = { memoryCost: 19456, timeCost: 2, parallelism: 1 }; // OWASP baseline for Argon2id
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 const DAY_MS = 86_400_000;
 
-export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
 
 export interface ClientInfo {
   userAgent?: string;
@@ -37,6 +38,7 @@ export class AuthService implements OnModuleInit {
     private readonly dbs: DbService,
     @Inject(CONFIG) private readonly config: AppConfig,
     private readonly audit: AuditService,
+    private readonly recovery: AccountRecoveryService,
   ) {}
 
   async onModuleInit() {
@@ -65,6 +67,8 @@ export class AuthService implements OnModuleInit {
       throw err;
     }
     const token = await this.createSession(user.id, client);
+    // Sent after commit; a mail failure must not fail sign-up (the user can resend from the app).
+    await this.recovery.sendVerification(user.id);
     return { user: toUserDto(user), token };
   }
 
@@ -157,8 +161,8 @@ export class AuthService implements OnModuleInit {
   }
 }
 
-function toUserDto(u: { id: string; email: string; name: string }): UserDto {
-  return { id: u.id, email: u.email, name: u.name };
+export function toUserDto(u: { id: string; email: string; name: string; emailVerifiedAt: Date | null }): UserDto {
+  return { id: u.id, email: u.email, name: u.name, emailVerified: u.emailVerifiedAt !== null };
 }
 
 function toClient(c: ClientInfo) {

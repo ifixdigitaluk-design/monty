@@ -9,6 +9,16 @@ const EnvSchema = z.object({
   RATE_LIMIT: z.coerce.number().int().positive().default(300),
   AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
   TRUST_PROXY: z.string().default('loopback'),
+  /** Public origin of the web app, used in links inside emails. */
+  APP_URL: z.url().default('http://localhost:3000'),
+  /** 'log' keeps emails in memory and logs them (development/test). 'smtp' sends through any SMTP provider. */
+  MAIL_TRANSPORT: z.enum(['log', 'smtp']).default('log'),
+  MAIL_FROM: z.string().default('Monty <no-reply@localhost>'),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z.enum(['true', 'false']).default('false'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -23,6 +33,12 @@ export interface AppConfig {
   trustProxy: string;
   cookieName: string;
   sessionTtlDays: number;
+  appUrl: string;
+  mail: {
+    transport: 'log' | 'smtp';
+    from: string;
+    smtp?: { host: string; port: number; secure: boolean; user?: string; pass?: string };
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -32,6 +48,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   const e = parsed.data;
   const isProduction = e.NODE_ENV === 'production';
+  if (e.MAIL_TRANSPORT === 'smtp' && !e.SMTP_HOST) throw new Error('Invalid environment: SMTP_HOST is required when MAIL_TRANSPORT=smtp');
+  if (isProduction && e.MAIL_TRANSPORT !== 'smtp') {
+    throw new Error('Invalid environment: production requires MAIL_TRANSPORT=smtp (password reset and verification depend on email)');
+  }
+  if (isProduction && !e.APP_URL.startsWith('https://')) throw new Error('Invalid environment: APP_URL must be https in production');
   return {
     nodeEnv: e.NODE_ENV,
     isProduction,
@@ -45,6 +66,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // __Host- prefix forces Secure, path=/ and no Domain attribute in browsers.
     cookieName: isProduction ? '__Host-monty_session' : 'monty_session',
     sessionTtlDays: 30,
+    appUrl: e.APP_URL.replace(/\/$/, ''),
+    mail: {
+      transport: e.MAIL_TRANSPORT,
+      from: e.MAIL_FROM,
+      smtp: e.SMTP_HOST
+        ? { host: e.SMTP_HOST, port: e.SMTP_PORT, secure: e.SMTP_SECURE === 'true', user: e.SMTP_USER, pass: e.SMTP_PASS }
+        : undefined,
+    },
   };
 }
 

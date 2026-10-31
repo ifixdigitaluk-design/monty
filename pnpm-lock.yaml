@@ -65,6 +65,9 @@ importers:
       helmet:
         specifier: 8.3.0
         version: 8.3.0
+      nodemailer:
+        specifier: 9.1.1
+        version: 9.1.1
       reflect-metadata:
         specifier: 0.2.2
         version: 0.2.2
@@ -2487,6 +2490,10 @@ packages:
   node-releases@2.0.62:
     resolution: {integrity: sha512-A0Eq+qVDQI97IbAD6g/HriIuv256el9N8EwF4+xqJ49pwrdRYpdCSmLk0sO4I3fnS6hpYE5v22B73Bk+WArEoQ==}
     engines: {node: '>=18'}
+
+  nodemailer@9.1.1:
+    resolution: {integrity: sha512-izw9mVKFix6YSnC9eLgV6g1opl9DUlRio9ZNcq+Wu9Ujn2UwF+8Nl0B8nz22kEC+CTZCvinkxwJ0DeFbb6NwcQ==}
+    engines: {node: '>=6.0.0'}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -4957,6 +4964,8 @@ snapshots:
       - babel-plugin-macros
 
   node-releases@2.0.62: {}
+
+  nodemailer@9.1.1: {}
 
   object-assign@4.1.1: {}
 
