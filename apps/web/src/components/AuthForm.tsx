@@ -35,7 +35,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-screen items-center justify-center p-4">
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-xl border border-line bg-surface p-6" noValidate={false}>
         <div>
           <h1 className="text-lg font-semibold">{mode === 'login' ? 'Sign in to Monty' : 'Create your Monty account'}</h1>
@@ -89,6 +89,6 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
           )}
         </p>
       </form>
-    </div>
+    </main>
   );
 }

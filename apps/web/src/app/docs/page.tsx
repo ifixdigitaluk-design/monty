@@ -65,6 +65,7 @@ function Docs() {
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col md:min-h-screen md:flex-row">
+      {docId ? null : <h1 className="sr-only">{workspace.name} documents</h1>}
       <nav aria-label="Pages" className="border-b border-line p-3 md:w-64 md:border-b-0 md:border-r">
         <div className="mb-2 flex items-center justify-between">
           <Link href={`/workspace?id=${ws}`} className="text-[12px] font-medium uppercase tracking-wide text-muted hover:underline">{workspace.name} docs</Link>

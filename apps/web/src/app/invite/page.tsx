@@ -50,7 +50,7 @@ function Invite() {
   const next = encodeURIComponent(`/invite?token=${token}`);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md space-y-4 rounded-xl border border-line bg-surface p-6">
         {error && !invite ? (
           <ErrorBanner message={error} />
@@ -100,6 +100,6 @@ function Invite() {
           </>
         )}
       </div>
-    </div>
+    </main>
   );
 }

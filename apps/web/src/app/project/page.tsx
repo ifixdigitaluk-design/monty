@@ -376,6 +376,7 @@ function ProjectHeader({
 
   return (
     <header className="space-y-3">
+      <h1 className="sr-only">{project.name}</h1>
       <div className="flex items-start justify-between gap-4">
         <input
           aria-label="Project name"
