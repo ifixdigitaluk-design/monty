@@ -5,6 +5,7 @@
 import type {
   ActivityDto,
   AiProposalDto,
+  AttachmentDto,
   ChannelDto,
   ChatUnreadDto,
   CreateChannelInput,
@@ -160,6 +161,28 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       react: (messageId: string, emoji: string) => request<{ message: MessageDto }>('POST', `/messages/${messageId}/reactions`, { emoji }),
       read: (id: string) => request<void>('POST', `/channels/${id}/read`),
       unread: () => request<{ workspaces: ChatUnreadDto[] }>('GET', '/me/chat/unread'),
+    },
+    files: {
+      /** Uploads raw bytes (a browser File/Blob) to a task, document or chat channel. */
+      upload: async (targetType: 'task' | 'document' | 'channel', targetId: string, file: Blob & { name?: string }) => {
+        let res: Response;
+        try {
+          res = await fetchImpl(`${baseUrl}/attachments?targetType=${targetType}&targetId=${targetId}`, {
+            method: 'POST',
+            headers: { 'X-Monty-Client': opts.client ?? 'web', 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name ?? 'file') },
+            body: file,
+            credentials: 'include',
+          });
+        } catch (err) {
+          throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server. Check your connection.', err);
+        }
+        const json = (await res.json().catch(() => undefined)) as { attachment?: AttachmentDto } & ApiErrorBody | undefined;
+        if (!res.ok) throw new ApiError(res.status, json?.error?.code ?? 'UNKNOWN', json?.error?.message ?? `Upload failed (${res.status})`, json?.error?.details);
+        return json!.attachment!;
+      },
+      forTask: (taskId: string) => request<{ attachments: AttachmentDto[] }>('GET', `/tasks/${taskId}/attachments`),
+      forDocument: (docId: string) => request<{ attachments: AttachmentDto[] }>('GET', `/documents/${docId}/attachments`),
+      remove: (id: string) => request<void>('DELETE', `/attachments/${id}`),
     },
     account: {
       exports: () => request<{ exports: DataExportDto[] }>('GET', '/me/exports'),

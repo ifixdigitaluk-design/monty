@@ -730,9 +730,11 @@ export const OpenDmSchema = z.strictObject({ userIds: z.array(uuid).min(1).max(7
 export const AddChannelMembersSchema = z.strictObject({ userIds: z.array(uuid).min(1).max(50) });
 export const PostMessageSchema = z.strictObject({
   id: uuid.optional(),
-  body: z.string().trim().min(1, 'Write something first').max(8000),
+  /** May be empty when files are attached. */
+  body: z.string().trim().max(8000).default(''),
+  attachmentIds: z.array(uuid).max(10).default([]),
   parentId: uuid.optional(),
-});
+}).refine((m) => m.body.length > 0 || m.attachmentIds.length > 0, { message: 'Write something first', path: ['body'] });
 export type PostMessageInput = z.infer<typeof PostMessageSchema>;
 export const EditMessageSchema = z.strictObject({ body: z.string().trim().min(1).max(8000) });
 export const REACTION_EMOJI = ['👍', '❤️', '😄', '🎉', '👀', '✅', '🙏', '🔥'] as const;
@@ -766,9 +768,23 @@ export interface MessageDto {
   replyCount: number;
   lastReplyAt: string | null;
   reactions: { emoji: string; count: number; mine: boolean }[];
+  attachments: AttachmentDto[];
 }
 export interface ChatUnreadDto {
   workspaceId: string;
   unread: number;
   mentions: number;
+}
+
+// ---------- attachments ----------
+export interface AttachmentDto {
+  id: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  /** True for real images and PDFs, which may be previewed; everything else downloads. */
+  inline: boolean;
+  uploaderId: string;
+  createdAt: string;
+  url: string;
 }

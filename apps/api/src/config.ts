@@ -42,6 +42,9 @@ const EnvSchema = z.object({
   ERROR_WEBHOOK_URL: z.url().optional().or(z.literal('').transform(() => undefined)),
   /** 'open': anyone can sign up. 'invite': only addresses with a pending invitation (plus the very first account). */
   SIGNUP_MODE: z.enum(['open', 'invite']).default('open'),
+  /** Where uploaded files are stored (a persistent volume in production). */
+  FILES_DIR: z.string().default('.data/uploads'),
+  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(500).default(25),
   /** Version identifier shown in metrics and error reports (e.g. the git commit). */
   RELEASE: z.string().max(100).default('dev'),
   /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
@@ -83,6 +86,7 @@ export interface AppConfig {
   errorWebhookUrl?: string;
   release: string;
   signupMode: 'open' | 'invite';
+  files: { dir: string; maxBytes: number };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -160,6 +164,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     errorWebhookUrl: e.ERROR_WEBHOOK_URL,
     release: e.RELEASE,
     signupMode: e.SIGNUP_MODE,
+    files: { dir: e.FILES_DIR, maxBytes: e.MAX_UPLOAD_MB * 1024 * 1024 },
   };
 }
 

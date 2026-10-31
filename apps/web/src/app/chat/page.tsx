@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { renderBody } from '@/components/CommentThread';
+import { AttachmentChip } from '@/components/Attachments';
+import type { AttachmentDto } from '@monty/validation';
 import { Badge, Button, cx, EmptyState, ErrorBanner, Field, Input, Modal, PageLoading, Select, Textarea, useToast } from '@/components/ui';
 import { api, errorMessage } from '@/lib/api';
 import { LiveChatEvent, useLiveEvents } from '@/lib/live';
@@ -346,7 +348,14 @@ function MessageItem(props: { m: MessageDto; members: Member[]; meId: string; ca
           </div>
         </form>
       ) : (
-        <p className="whitespace-pre-wrap break-words text-[14px]">{renderBody(m.body, props.members)}</p>
+        <>
+          {m.body ? <p className="whitespace-pre-wrap break-words text-[14px]">{renderBody(m.body, props.members)}</p> : null}
+          {m.attachments.length ? (
+            <ul className="mt-1 flex flex-wrap gap-2" aria-label="Files">
+              {m.attachments.map((a) => <li key={a.id}><AttachmentChip a={a} /></li>)}
+            </ul>
+          ) : null}
+        </>
       )}
       {!m.deleted ? (
         <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -393,7 +402,25 @@ function Composer({ channelId, parentId, members, label, onSent }: { channelId: 
   const [busy, setBusy] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // "@Name" → id
+  const [files, setFiles] = useState<AttachmentDto[]>([]);
+  const [uploading, setUploading] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function attach(list: FileList | File[]) {
+    setUploading(true);
+    try {
+      for (const f of Array.from(list).slice(0, 10 - files.length)) {
+        const a = await api.files.upload('channel', channelId, f);
+        setFiles((all) => [...all, a]);
+      }
+    } catch (err) {
+      toast({ tone: 'error', message: errorMessage(err) });
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  }
 
   const matches = mentionQuery === null ? [] : members.filter((m) => m.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 6);
 
@@ -413,13 +440,14 @@ function Composer({ channelId, parentId, members, label, onSent }: { channelId: 
   }
   async function send() {
     let body = text.trim();
-    if (!body || busy) return;
+    if ((!body && files.length === 0) || busy || uploading) return;
     for (const [label, id] of picked) body = body.split(label).join(`<@${id}>`);
     setBusy(true);
     try {
-      const { message } = await api.chat.post(channelId, { id: crypto.randomUUID(), body, ...(parentId ? { parentId } : {}) });
+      const { message } = await api.chat.post(channelId, { id: crypto.randomUUID(), body, attachmentIds: files.map((f) => f.id), ...(parentId ? { parentId } : {}) });
       setText('');
       setPicked(new Map());
+      setFiles([]);
       onSent(message);
     } catch (err) {
       toast({ tone: 'error', message: errorMessage(err) });
@@ -437,7 +465,13 @@ function Composer({ channelId, parentId, members, label, onSent }: { channelId: 
   }
 
   return (
-    <form className="relative border-t border-line p-3" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+    <form
+      className="relative border-t border-line p-3"
+      onSubmit={(e) => { e.preventDefault(); void send(); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) void attach(e.dataTransfer.files); }}
+      onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); void attach(e.clipboardData.files); } }}
+    >
       {matches.length && mentionQuery !== null ? (
         <ul role="listbox" aria-label="Mention someone" className="absolute bottom-full left-3 mb-1 w-64 rounded-lg border border-line bg-surface p-1 shadow">
           {matches.map((m) => (
@@ -447,9 +481,16 @@ function Composer({ channelId, parentId, members, label, onSent }: { channelId: 
           ))}
         </ul>
       ) : null}
+      {files.length ? (
+        <ul className="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
+          {files.map((f) => <li key={f.id}><AttachmentChip a={f} onRemove={() => setFiles((all) => all.filter((x) => x.id !== f.id))} /></li>)}
+        </ul>
+      ) : null}
       <div className="flex items-end gap-2">
+        <input ref={fileInput} type="file" multiple className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => e.target.files && void attach(e.target.files)} />
+        <Button type="button" variant="ghost" aria-label="Attach files" busy={uploading} onClick={() => fileInput.current?.click()}>📎</Button>
         <Textarea ref={ref} aria-label={label} placeholder={`${label} — Enter to send, Shift+Enter for a new line`} rows={2} value={text} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey} className="flex-1" />
-        <Button type="submit" variant="primary" busy={busy} disabled={!text.trim()}>Send</Button>
+        <Button type="submit" variant="primary" busy={busy} disabled={(!text.trim() && files.length === 0) || uploading}>Send</Button>
       </div>
     </form>
   );

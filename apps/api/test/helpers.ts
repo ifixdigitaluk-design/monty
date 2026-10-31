@@ -13,6 +13,7 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'attachments',
   'message_reactions',
   'messages',
   'channel_members',

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { canInWorkspace } from '@monty/domain';
-import { channelMembers, channels, DbOrTx, messageReactions, messages, users } from '@monty/database';
+import { attachments, channelMembers, channels, DbOrTx, messageReactions, messages, users } from '@monty/database';
+import { attachmentDto } from '../files/attachment-dto';
 import {
   ChannelDto,
   ChatUnreadDto,
@@ -39,7 +40,7 @@ export class ChatService {
   // ---------- helpers ----------
 
   /** Channel the user can see (RLS) in a workspace they still have access to; 404 otherwise. */
-  private async visibleChannel(userId: string, channelId: string) {
+  async visibleChannel(userId: string, channelId: string) {
     const ch = await this.dbs.db.query.channels.findFirst({ where: eq(channels.id, channelId) });
     if (!ch) throw notFound('Channel');
     const ws = await this.access.workspaceAccess(userId, ch.workspaceId);
@@ -49,7 +50,7 @@ export class ChatService {
     return { ch, ws, member: member ?? null };
   }
 
-  private async requireMember(userId: string, channelId: string) {
+  async requireMember(userId: string, channelId: string) {
     const v = await this.visibleChannel(userId, channelId);
     if (!v.member) throw forbidden('Join the channel first.');
     if (v.ch.archivedAt) throw conflict('CONFLICT', 'This channel is archived.');
@@ -260,6 +261,9 @@ export class ChatService {
           .from(messageReactions)
           .where(inArray(messageReactions.messageId, ids))
       : [];
+    const files = ids.length
+      ? await this.dbs.db.select().from(attachments).where(and(eq(attachments.targetType, 'message'), inArray(attachments.targetId, ids), isNull(attachments.deletedAt)))
+      : [];
     return rows.map((m) => {
       const mine = reacts.filter((r) => r.messageId === m.id);
       const byEmoji = new Map<string, { count: number; mine: boolean }>();
@@ -281,6 +285,7 @@ export class ChatService {
         replyCount: m.replyCount,
         lastReplyAt: m.lastReplyAt?.toISOString() ?? null,
         reactions: [...byEmoji].map(([emoji, v]) => ({ emoji, ...v })),
+        attachments: m.deletedAt ? [] : files.filter((f) => f.targetId === m.id).map(attachmentDto),
       };
     });
   }
@@ -334,6 +339,15 @@ export class ChatService {
       .insert(messages)
       .values({ id: input.id, channelId: ch.id, organisationId: ch.organisationId, workspaceId: ch.workspaceId, authorId: userId, parentId: parent?.id ?? null, body: input.body })
       .returning();
+    if (input.attachmentIds.length) {
+      // Pending uploads by this user in this channel move onto the message.
+      const linked = await this.dbs.db
+        .update(attachments)
+        .set({ targetType: 'message', targetId: m!.id })
+        .where(and(inArray(attachments.id, input.attachmentIds), eq(attachments.uploaderId, userId), eq(attachments.targetType, 'channel'), eq(attachments.targetId, ch.id), isNull(attachments.deletedAt)))
+        .returning({ id: attachments.id });
+      if (linked.length !== new Set(input.attachmentIds).size) throw badRequest('Some files are no longer available. Upload them again.');
+    }
     if (parent) {
       await this.dbs.db.update(messages).set({ replyCount: sql`${messages.replyCount} + 1`, lastReplyAt: m!.createdAt }).where(eq(messages.id, parent.id));
     }
@@ -382,6 +396,7 @@ export class ChatService {
     if (m.authorId !== userId && !moderator) throw forbidden('You can only delete your own messages.');
     if (m.deletedAt) return;
     await this.dbs.db.update(messages).set({ deletedAt: new Date(), body: '' }).where(eq(messages.id, m.id));
+    await this.dbs.db.update(attachments).set({ deletedAt: new Date() }).where(and(eq(attachments.targetType, 'message'), eq(attachments.targetId, m.id)));
     await this.emit(ch, 'message.deleted', { messageId: m.id, parentId: m.parentId, actorId: userId });
   }
 

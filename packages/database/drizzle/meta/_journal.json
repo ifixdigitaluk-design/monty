@@ -155,6 +155,20 @@
       "when": 1793461455209,
       "tag": "0021_chat_rls_search",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793462354304,
+      "tag": "0022_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793462355112,
+      "tag": "0023_attachments_rls",
+      "breakpoints": true
     }
   ]
 }

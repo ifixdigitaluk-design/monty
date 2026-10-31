@@ -64,6 +64,8 @@ services:
     init: true
     read_only: true
     tmpfs: [/tmp]
+    volumes:
+      - uploads:/data/uploads # persistent: uploaded files (back up together with the database)
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     stop_grace_period: 30s
@@ -89,3 +91,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

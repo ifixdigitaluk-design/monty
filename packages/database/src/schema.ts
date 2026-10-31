@@ -757,6 +757,38 @@ export const messageReactions = pgTable(
   (t) => [unique('message_reactions_unique').on(t.messageId, t.userId, t.emoji)],
 );
 
+/**
+ * Uploaded files. Bytes live in the file store (FILES_DIR, a persistent volume) under `storageKey`; this row holds
+ * metadata and who may see it. Chat uploads start "pending" on a channel and are linked to a message when posted.
+ */
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    uploaderId: uuid('uploader_id')
+      .notNull()
+      .references(() => users.id),
+    /** task | document | message | channel (pending chat upload) */
+    targetType: text('target_type').notNull(),
+    targetId: uuid('target_id').notNull(),
+    /** For chat: the channel (targetType message/channel). Used by row-level security. */
+    channelId: uuid('channel_id'),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'attachments_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('attachments_target_idx').on(t.targetType, t.targetId),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',

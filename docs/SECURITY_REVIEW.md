@@ -46,4 +46,12 @@ API (NestJS), web app (Next.js), database (Postgres with row-level security), co
 - Rate limits are in memory per instance, so run one API instance or add Redis.
 - There's no account-level alert email for new-device sign-ins.
 - There's no independent penetration test.
-- **File uploads (next feature) need their own review**: type checks, size limits, malware scanning (none available for free; uploads are served as attachments, never inline HTML).
+- **No malware scanning of uploads** (no free scanner wired in). Mitigations below; staff should still treat downloaded files from colleagues with normal care.
+
+## File attachments (added in this round)
+- Same permission as the thing they're attached to (task/document workspace, chat channel membership), enforced by the API **and** RLS on `attachments`. Other tenants get 404.
+- Size limit (`MAX_UPLOAD_MB`, default 25) is enforced while streaming, and the partial file is deleted.
+- Content type is decided from the file's first bytes, not the browser's claim. Only PNG/JPEG/GIF/WebP/PDF may be shown inline; everything else (including HTML and SVG) is sent as a download, `application/octet-stream`, `nosniff`, with `Content-Security-Policy: sandbox`.
+- Filenames are stripped of paths and control characters; files are stored under random ids, never under the user's name.
+- Chat uploads that are never posted, and files of deleted items, are purged by the nightly maintenance job.
+- Tests: `files.e2e` (permissions, cross-tenant, size limit, type sniffing, purge) and Playwright `attachments.spec`.

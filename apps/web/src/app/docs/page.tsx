@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { Attachments } from '@/components/Attachments';
 import { Markdown } from '@/components/Markdown';
 import { Button, cx, EmptyState, ErrorBanner, PageLoading, Spinner, Textarea, useToast } from '@/components/ui';
 import { api, ApiError, errorMessage } from '@/lib/api';
@@ -170,6 +171,8 @@ function Editor({ id, onChanged, onNewChild, onDeleted }: { id: string; onChange
     timer.current = setTimeout(() => void flush(), 1200);
   }
 
+  const { user } = useSession();
+
   // Never lose typing when leaving the page.
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
@@ -262,6 +265,9 @@ function Editor({ id, onChanged, onNewChild, onDeleted }: { id: string; onChange
           <Markdown source={body} />
         </div>
       )}
+      <div className="mt-6">
+        <Attachments targetType="document" targetId={id} canEdit={canEdit} meId={user.id} isAdmin={doc.role === 'ADMIN'} />
+      </div>
       {history ? (
         <section aria-labelledby="history-title" className="mt-6 rounded-xl border border-line bg-surface p-4">
           <div className="mb-2 flex items-center justify-between">
