@@ -8,7 +8,7 @@ import { Button, Field, Input } from './ui';
 
 /** Only allow same-site relative redirects after login (prevents open redirects). */
 function safeNext(next: string | null): string {
-  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/tasks';
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : '/home';
 }
 
 export function AuthForm({ mode }: { mode: 'login' | 'register' }) {

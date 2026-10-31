@@ -20,7 +20,7 @@ async function register(page: Page, name: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   return email;
 }
 
@@ -31,7 +31,7 @@ async function login(browser: Browser, email: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   return page;
 }
 
@@ -43,6 +43,7 @@ const saved = (page: Page) => expect(page.locator('[data-save-state="saved"]')).
 
 test('sign up → project → tasks → readiness → board → persistence → isolation → logout', async ({ page, browser }) => {
   const email = await register(page, 'Ana');
+  await page.getByRole('link', { name: 'My Tasks' }).click();
   await expect(page.getByText('Nothing assigned to you')).toBeVisible();
 
   // Personal workspace exists and is reachable from the sidebar.

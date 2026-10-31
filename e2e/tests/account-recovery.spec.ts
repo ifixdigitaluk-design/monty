@@ -26,7 +26,7 @@ async function register(page: Page, email: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 }
 
 test('email verification from the sign-up email', async ({ page }) => {
@@ -52,7 +52,7 @@ test('forgot password → email link → new password → old sessions signed ou
   await other.getByLabel('Email', { exact: true }).fill(email);
   await other.getByLabel('Password').fill('correct-horse-battery');
   await other.getByRole('button', { name: 'Sign in' }).click();
-  await expect(other.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(other.getByRole('heading', { name: 'Home' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in to Monty' })).toBeVisible();
@@ -75,7 +75,7 @@ test('forgot password → email link → new password → old sessions signed ou
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('a-brand-new-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   // The reset link proved inbox access, so the email is now confirmed.
   await expect(page.getByRole('region', { name: 'Email confirmation' })).toHaveCount(0);
 });

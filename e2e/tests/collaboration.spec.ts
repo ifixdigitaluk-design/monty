@@ -8,7 +8,7 @@ async function register(page: Page, name: string, email: string) {
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 }
 
 /** Owner creates a team org and project; the teammate joins through an invitation link. */

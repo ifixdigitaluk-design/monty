@@ -11,7 +11,7 @@ test('capture key screens', async ({ page }) => {
   await page.getByLabel('Email', { exact: true }).fill(`priya-${Date.now()}@example.com`);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Personal', exact: true }).click();
   await page.getByRole('button', { name: 'Create a project' }).click();

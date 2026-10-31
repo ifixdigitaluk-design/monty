@@ -397,3 +397,38 @@ export const MENTION_PATTERN = /<@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export function extractMentions(body: string): string[] {
   return [...new Set([...body.matchAll(MENTION_PATTERN)].map((m) => m[1]!.toLowerCase()))];
 }
+
+export const SearchQuerySchema = z.strictObject({ q: z.string().trim().min(1).max(200), limit: z.coerce.number().int().min(1).max(50).optional() });
+export const CalendarQuerySchema = z
+  .strictObject({ from: isoDate, to: isoDate, mine: z.enum(['1', '0']).optional() })
+  .refine((v) => v.from <= v.to, { message: 'from must be before to' })
+  .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Range is limited to 62 days' });
+
+export interface SearchResultDto {
+  type: 'project' | 'task' | 'comment';
+  id: string;
+  title: string;
+  snippet: string;
+  projectId: string;
+  projectName: string;
+  taskId: string | null;
+  workspaceName: string;
+}
+
+export interface CalendarEntryDto {
+  kind: 'task' | 'milestone';
+  id: string;
+  title: string;
+  date: string;
+  projectId: string;
+  projectName: string;
+  status: string | null;
+  assigneeId: string | null;
+  done: boolean;
+}
+
+export interface HomeDto {
+  counts: { overdue: number; today: number; thisWeek: number; open: number; unreadNotifications: number };
+  attention: { projectId: string; projectName: string; workspaceName: string; computedStatus: string; reasons: string[] }[];
+  recentActivity: ActivityDto[];
+}

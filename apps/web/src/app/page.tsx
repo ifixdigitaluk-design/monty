@@ -10,7 +10,7 @@ export default function Index() {
   useEffect(() => {
     api.auth
       .me()
-      .then(() => router.replace('/tasks'))
+      .then(() => router.replace('/home'))
       .catch(() => router.replace('/login'));
   }, [router]);
   return <PageLoading />;

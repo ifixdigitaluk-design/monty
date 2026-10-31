@@ -7,6 +7,7 @@ import { FormEvent, ReactNode, Suspense, useEffect, useState } from 'react';
 import { api, errorMessage } from '@/lib/api';
 import { RequireSession, useSession } from '@/lib/session';
 import { Button, cx, Field, Input, Modal, PageLoading } from './ui';
+import { SearchPalette } from './SearchPalette';
 
 export function AppShell({ children }: { children: ReactNode }) {
   // Suspense is required because the shell and pages read query parameters (static-export friendly routing, ADR-005).
@@ -60,6 +61,17 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const [orgModal, setOrgModal] = useState(false);
   const [wsModalOrg, setWsModalOrg] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   useEffect(() => {
     api.notifications
       .list(true)
@@ -83,8 +95,16 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
       <div className="flex h-12 items-center px-4 font-semibold tracking-tight">Monty</div>
       <div className="flex-1 space-y-5 overflow-y-auto px-2 pb-4">
         <div>
+          <button
+            className="mb-1 flex w-full items-center justify-between rounded-md border border-line px-2 py-1.5 text-left text-muted hover:bg-surface-2"
+            onClick={() => setSearchOpen(true)}
+          >
+            Search <kbd className="text-[11px]">Ctrl K</kbd>
+          </button>
+          {navItem('/home', 'Home', pathname === '/home')}
           {navItem('/inbox', unread > 0 ? `Inbox (${unread})` : 'Inbox', pathname === '/inbox')}
           {navItem('/tasks', 'My Tasks', pathname === '/tasks')}
+          {navItem('/calendar', 'Calendar', pathname === '/calendar')}
         </div>
 
         {organisations.map((org) => (
@@ -135,6 +155,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
         </div>
       </div>
 
+      {searchOpen ? <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} /> : null}
       <NameModal
         open={orgModal}
         title="New organisation"

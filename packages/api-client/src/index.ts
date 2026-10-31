@@ -4,6 +4,9 @@
  */
 import type {
   ActivityDto,
+  CalendarEntryDto,
+  HomeDto,
+  SearchResultDto,
   CommentDto,
   CreateMilestoneInput,
   DependencyDto,
@@ -111,6 +114,12 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
+    },
+    insights: {
+      search: (q: string) => request<{ results: SearchResultDto[] }>('GET', `/search?q=${encodeURIComponent(q)}`),
+      calendar: (from: string, to: string, mine: boolean) =>
+        request<{ entries: CalendarEntryDto[] }>('GET', `/calendar?from=${from}&to=${to}&mine=${mine ? '1' : '0'}`),
+      home: (today?: string) => request<HomeDto>('GET', `/me/home${q(today)}`),
     },
     milestones: {
       list: (projectId: string) => request<{ milestones: MilestoneDto[] }>('GET', `/projects/${projectId}/milestones`),
