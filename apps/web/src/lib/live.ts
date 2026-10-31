@@ -23,6 +23,15 @@ export interface LiveChatEvent {
   at: string;
 }
 
+export interface LiveDatabaseEvent {
+  workspaceId: string;
+  databaseId: string;
+  kind: 'database.updated' | 'database.deleted' | 'row.created' | 'row.updated' | 'row.deleted' | 'rows.imported';
+  rowId: string | null;
+  actorId: string;
+  at: string;
+}
+
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'revoked';
 
 /**
@@ -33,7 +42,7 @@ export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'revoked';
 export function useLiveEvents(
   workspaceId: string | null,
   projectId: string | null,
-  handlers: { onChange: (e: LiveChange) => void; onReset: () => void; onChat?: (e: LiveChatEvent) => void },
+  handlers: { onChange: (e: LiveChange) => void; onReset: () => void; onChat?: (e: LiveChatEvent) => void; onDatabase?: (e: LiveDatabaseEvent) => void },
 ) {
   const [status, setStatus] = useState<LiveStatus>('connecting');
   const [viewers, setViewers] = useState<{ userId: string; name: string }[]>([]);
@@ -59,6 +68,7 @@ export function useLiveEvents(
       h.current.onChange(e);
     });
     es.addEventListener('chat', (msg) => h.current.onChat?.(JSON.parse((msg as MessageEvent).data) as LiveChatEvent));
+    es.addEventListener('database', (msg) => h.current.onDatabase?.(JSON.parse((msg as MessageEvent).data) as LiveDatabaseEvent));
     es.addEventListener('reset', () => h.current.onReset());
     es.addEventListener('presence', (msg) => setViewers((JSON.parse((msg as MessageEvent).data) as { viewers: { userId: string; name: string }[] }).viewers));
     es.addEventListener('revoked', () => {

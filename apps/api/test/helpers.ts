@@ -15,6 +15,10 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 const TABLES = [
   'attachments',
   'message_reactions',
+  'database_views',
+  'database_rows',
+  'database_fields',
+  'databases',
   'messages',
   'channel_members',
   'channels',

@@ -56,11 +56,37 @@ test('no axe violations on the main pages (desktop and phone width)', async ({ p
     ['sessions', '/settings/sessions'],
     ['account', '/settings/account'],
     ['chat', `/chat?ws=${ws.split('id=')[1]}`],
+    ['databases-empty', `/databases?ws=${ws.split('id=')[1]}`],
   ];
   for (const [name, url] of pages) {
     await page.goto(url);
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
     if (name === 'calendar') await expect(page.getByRole('list', { name: /^Items on / })).toContainText('Due today');
+    results[name] = summary(await axe(page));
+  }
+  // A populated database: table (every field type), board, and an open row page.
+  const wsId = ws.split('id=')[1]!;
+  const db = (await (await page.request.post(`/api/v1/workspaces/${wsId}/databases`, { headers, data: { name: 'Audit DB' } })).json()).database;
+  const status = db.fields[0];
+  const typed: Record<string, string> = {};
+  for (const [name, type, extra] of [
+    ['Notes', 'text'], ['Score', 'number'], ['Due', 'date'], ['Done', 'checkbox'], ['Owner', 'person'], ['Link', 'url'],
+    ['Tags', 'multi_select', { options: { choices: [{ id: 'a', label: 'Alpha', color: 'purple' }, { id: 'b', label: 'Beta', color: 'orange' }] } }],
+  ] as [string, string, object?][]) {
+    typed[name] = (await (await page.request.post(`/api/v1/databases/${db.id}/fields`, { headers, data: { name, type, ...extra } })).json()).field.id;
+  }
+  const me = (await (await page.request.get('/api/v1/auth/me')).json()).user.id;
+  const row = (await (await page.request.post(`/api/v1/databases/${db.id}/rows`, {
+    headers,
+    data: { title: 'First row', values: { [status.id]: 'doing', [typed.Notes!]: 'Hello', [typed.Score!]: 3, [typed.Due!]: today, [typed.Done!]: true, [typed.Owner!]: [me], [typed.Link!]: 'https://example.com', [typed.Tags!]: ['a', 'b'] } },
+  })).json()).row;
+  for (const [name, url] of [
+    ['database-table', `/databases?ws=${wsId}&id=${db.id}`],
+    ['database-board', `/databases?ws=${wsId}&id=${db.id}&view=${db.views[1].id}`],
+    ['database-row', `/databases?ws=${wsId}&id=${db.id}&row=${row.id}`],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText('First row').or(page.getByLabel('Name of First row')).first()).toBeVisible();
     results[name] = summary(await axe(page));
   }
   await page.setViewportSize({ width: 390, height: 844 });

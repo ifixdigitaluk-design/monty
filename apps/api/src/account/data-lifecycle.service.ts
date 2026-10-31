@@ -115,6 +115,13 @@ export class DataLifecycleService {
     const projects = await q(sql`select id, name, objective, description, created_at from projects where created_by_id = ${userId} and deleted_at is null`);
     const comments = await q(sql`select id, project_id, task_id, body, created_at, edited_at from comments where author_id = ${userId} and deleted_at is null order by created_at`);
     const documents = await q(sql`select id, title, body, created_at, updated_at from documents where created_by_id = ${userId} and deleted_at is null`);
+    const messages = await q(sql`
+      select m.id, c.name as channel, c.kind as channel_kind, m.parent_id, m.body, m.created_at, m.edited_at
+      from messages m join channels c on c.id = m.channel_id where m.author_id = ${userId} and m.deleted_at is null order by m.created_at`);
+    const databaseRows = await q(sql`
+      select r.id, d.name as database, r.title, r.values, r.body, r.created_at, r.updated_at
+      from database_rows r join databases d on d.id = r.database_id
+      where r.created_by_id = ${userId} and r.deleted_at is null and d.deleted_at is null order by r.created_at`);
     const notifications = await q(sql`select type, entity_type, data, created_at, read_at from notifications where user_id = ${userId} order by created_at`);
     const aiRequests = await q(sql`select id, project_id, status, provider, input, created_at from ai_proposals where requested_by_id = ${userId}`);
     const automations = await q(sql`select id, name, trigger, conditions, actions, enabled, created_at from automation_rules where created_by_id = ${userId} and deleted_at is null`);
@@ -135,6 +142,8 @@ export class DataLifecycleService {
       tasks,
       comments,
       documentsCreated: documents,
+      chatMessages: messages,
+      databaseRowsCreated: databaseRows,
       notifications,
       aiRequests,
       automations,

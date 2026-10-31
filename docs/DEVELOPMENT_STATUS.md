@@ -63,8 +63,14 @@ Implementation status and verification status are recorded separately below.
 | A-01 | Accessible calendar (WAI-ARIA date grid, keyboard), main landmarks/headings; axe regression test | Implemented | Verified | accessibility.spec: 0 axe violations on 14 page states; keyboard test. No manual screen-reader test |
 | O-06 | Dockerfile (api/web/migrate), compose | Implemented | Run locally on a substitute base image | official base image + compose up **not verified** |
 | O-07 | Prometheus metrics, error-reporting webhook hook, job/email/automation monitoring | Implemented | Tested | observability.e2e; scraped from a container. **No monitoring service connected** |
+| P-01 | Sign-up that never reveals existing accounts; confirmed email required to sign in; invite-only mode; per-account lockout | Implemented | Verified | signup-mfa.e2e; Playwright sign-up flows follow the emailed link |
+| P-02 | Two-factor sign-in (TOTP, encrypted secret, replay refusal, 10 recovery codes) | Implemented | Verified | totp.test (RFC 4226/6238 vectors, ±1 step, replay); signup-mfa.e2e; Playwright two-factor.spec. Tested with codes generated in the test, **not with a phone authenticator app** |
+| P-03 | Team chat: public/private channels, DMs, threads, @mentions, reactions, unread, search, live | Implemented | Verified | chat.e2e (5), realtime audience test; Playwright chat.spec (two browsers) |
+| P-04 | File attachments on tasks, documents and chat (content-sniffed types, sandboxed downloads, RLS, purge) | Implemented | Verified | files.e2e (4); Playwright attachments.spec. Files live on the server disk (`FILES_DIR` volume); **no malware scanning** |
+| P-05 | Notion-style databases: 8 field types, table and board views with saved filters/sorts/hidden fields, row pages, live updates, search, CSV import (Notion/spreadsheet) and export | Implemented | Verified | domain databases.test (14), databases.e2e (9), realtime test; Playwright databases.spec; axe scan of table, board and row page. **No relations, rollups or formulas; deleted databases/rows have no restore screen** |
+| P-06 | Oracle Cloud free-tier install kit (Caddy HTTPS, DuckDNS, backups), Windows app and download page workflows | Written | **Not run** | scripts pass shellcheck; GitHub workflows not yet run; not tried on a real Oracle VM or a Windows PC |
 
-Not started: Redis rate limiting (B-07), MFA, labels, attachments, custom fields, saved views, user databases, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
+Not started: Redis rate limiting (B-07), Google sign-in (in progress), labels, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
 
 ## Session 1 report
 

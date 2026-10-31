@@ -66,6 +66,16 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         /* ignore malformed payloads */
       }
     });
+    // Database (Notion-style) changes go to everyone in the workspace, like other workspace changes.
+    this.listen('monty_db', (payload) => {
+      if (!payload) return;
+      try {
+        const e = JSON.parse(payload) as { workspaceId: string } & Record<string, unknown>;
+        for (const s of this.subscribers.values()) if (s.workspaceId === e.workspaceId) this.write(s, 'database', e);
+      } catch {
+        /* ignore malformed payloads */
+      }
+    });
     await this.connectListener();
     this.timers.push(setInterval(() => this.heartbeat(), HEARTBEAT_MS));
     this.timers.push(setInterval(() => void this.recheckAccess(), RECHECK_MS));
@@ -131,7 +141,7 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly channels = new Map<string, ((payload: string) => void)[]>();
 
   /** Subscribes to an additional Postgres NOTIFY channel on the shared listener connection. */
-  listen(channel: 'monty_mail' | 'monty_chat', cb: (payload: string) => void) {
+  listen(channel: 'monty_mail' | 'monty_chat' | 'monty_db', cb: (payload: string) => void) {
     const first = !this.channels.has(channel);
     this.channels.set(channel, [...(this.channels.get(channel) ?? []), cb]);
     if (first && this.listener) void this.listener.query(`LISTEN ${channel}`).catch(() => undefined);

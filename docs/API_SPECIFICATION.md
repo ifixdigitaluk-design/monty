@@ -121,5 +121,39 @@ Webhook requests: `POST` JSON `{event, rule, task, runId}` with `X-Monty-Signatu
 
 New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retry-After: 2`; nothing was saved) and **503 `REQUEST_TIMEOUT`** (handler exceeded `REQUEST_TIMEOUT_MS`; the change may have been saved — refresh before retrying). `invitation.emailSent` now means "queued for delivery".
 
+### Staff pilot — sign-up, two-factor, chat, files, databases
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/auth/register` | public | **always 202** `{status:"check_email"}`, no cookie, same body whether or not the email exists (owner of an existing account gets an "account exists" email, ≤1/h). `SIGNUP_MODE=invite` allows only the first account and invited addresses. Optional `next` (relative path) |
+| POST | `/auth/verify-email` | public + token | 200 `{verified, signedIn, user?}`; signs in unless the account has two-factor on. Links last 48 h, single use |
+| POST | `/auth/login` | public | 403 `EMAIL_NOT_VERIFIED` until confirmed (resends at most every 5 min). Two-factor accounts get `{mfaToken}` instead of a session. 10 failures in 15 min lock the account for 15 min |
+| POST | `/auth/login/mfa` | `{mfaToken, code}` or `{mfaToken, recoveryCode}` | challenge lasts 5 min, 5 attempts; a TOTP step can't be reused |
+| GET | `/auth/mfa` | self | `{enabled, enabledAt, recoveryCodesRemaining}` |
+| POST | `/auth/mfa/setup` · `/mfa/enable` · `/mfa/disable` · `/mfa/recovery-codes` | self + password (setup/disable/regenerate) and a current code | setup returns secret + QR (data URL); enable returns 10 recovery codes once |
+| GET/POST | `/workspaces/:id/channels` | workspace member / `task.create` | public or private channels; list includes unread and mention counts |
+| POST | `/workspaces/:id/dms` | workspace member | opens (or reuses) a direct message with the given members |
+| PATCH | `/channels/:id` | channel creator or workspace admin | name, topic, archived |
+| POST | `/channels/:id/join` · `/leave` | public channels only for join | |
+| GET/POST/DELETE | `/channels/:id/members[/:userId]` | channel member adds; removing others needs channel creator or workspace admin | private channels have a member limit; not for DMs |
+| GET/POST | `/channels/:id/messages` | channel member | pages of 50 (`?before=`); post is idempotent by `id`; `@` mentions notify; up to 10 `attachmentIds` |
+| GET | `/messages/:id/thread` | channel member | replies |
+| PATCH/DELETE | `/messages/:id` | author (delete: also channel creator or workspace admin) | delete also removes the message's files |
+| POST | `/messages/:id/reactions` | channel member | toggles one of the allowed emoji |
+| POST | `/channels/:id/read` · GET `/me/chat/unread` | self | |
+| POST | `/attachments?targetType=task\|document\|channel&targetId=` | edit rights on the target (chat: channel member) | raw bytes `application/octet-stream`, `X-Filename` (URL-encoded); `MAX_UPLOAD_MB` (default 25) → 413; 60 uploads/min |
+| GET | `/tasks/:id/attachments` · `/documents/:id/attachments` | read rights on the target | |
+| GET | `/attachments/:id[?inline=1]` | read rights | type detected from content; only PNG/JPEG/GIF/WebP/PDF inline, everything else a sandboxed download (`nosniff`, `CSP: sandbox`) |
+| DELETE | `/attachments/:id` | uploader or workspace admin | |
+| GET/POST | `/workspaces/:id/databases` | read / `task.create` | create starts with a Status select, a table and a board, or takes `import: {fields, rows}` (≤1000 rows; send more with `/import`) |
+| GET/PATCH/DELETE | `/databases/:id` | read / `task.create` | GET returns fields, views and all rows (no page bodies; max 10,000 rows) |
+| GET | `/databases/:id/export.csv` | read | UTF-8 with BOM; formula-like cells prefixed with `'` |
+| POST | `/databases/:id/import` | `task.update` | `{rows: [{title, cells[]}]}`, ≤1000 per request; cells follow field order; text that doesn't fit a field is left empty |
+| POST | `/databases/:id/fields` · PATCH/DELETE `/database-fields/:id` | `task.create` | types `text, number, select, multi_select, date, checkbox, person, url`; type can't be changed; removing an option clears it from rows; deleting a field removes its cells and view references; max 50 fields |
+| POST | `/databases/:id/views` · PATCH/DELETE `/database-views/:id` | `task.create` | `layout` table/board; `config {filters, match, sorts, groupBy, hiddenFieldIds}`; a board needs a select field; the last view can't be deleted |
+| POST | `/databases/:id/rows` | `task.update` | idempotent by `id`; values validated per field type (people must be workspace members) |
+| GET/PATCH/DELETE | `/database-rows/:id` | read / `task.update` | PATCH merges only the cells sent (`null` clears); changing `body` needs `expectedVersion` = the row's `bodyVersion` (409 `VERSION_CONFLICT` otherwise) |
+
+Live updates: chat events (`event: chat`) go only to people who can see the channel; database events (`event: database`) go to the workspace. Both are pointers — clients refetch through the endpoints above. Search (`GET /search`) also returns chat messages (`type: message`) and database rows (`type: database_row`, with `databaseId`).
+
 ## Not implemented (planned)
-Attachments (pre-signed object storage), saved views, custom fields, user databases, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.
+Object storage for files (they're on the server's disk today), malware scanning of uploads, database relations/rollups/formulas, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.

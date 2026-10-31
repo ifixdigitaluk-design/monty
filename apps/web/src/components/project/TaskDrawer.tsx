@@ -88,7 +88,7 @@ export function TaskDrawer({
   }
 
   return (
-    <aside
+    <div
       role="dialog"
       aria-label={`Task: ${task.title}`}
       className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-xl"
@@ -268,6 +268,6 @@ export function TaskDrawer({
           )}
         </div>
       ) : null}
-    </aside>
+    </div>
   );
 }

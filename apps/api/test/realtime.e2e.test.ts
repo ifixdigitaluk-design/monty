@@ -181,3 +181,24 @@ describe('chat live events', () => {
     sVic.close();
   });
 });
+
+describe('database live events', () => {
+  it('row changes reach teammates in the workspace as pointers, and nobody else', async () => {
+    const { owner, mia, wsId } = await team();
+    const otto = await signUp(app, 'Otto');
+    const ottoOrg = (await send(otto.agent, 'post', '/api/v1/organisations', { name: 'Other' })).body.organisation;
+    const db = (await send(owner.agent, 'post', `/api/v1/workspaces/${wsId}/databases`, { name: 'CRM' })).body.database;
+    const sMia = await stream(await cookieOf(mia.agent), `/api/v1/workspaces/${wsId}/events`);
+    const sOtto = await stream(await cookieOf(otto.agent), `/api/v1/workspaces/${ottoOrg.workspaces[0].id}/events`);
+    await sMia.waitFor((e) => e.event === 'ready');
+    await sOtto.waitFor((e) => e.event === 'ready');
+    const row = (await send(owner.agent, 'post', `/api/v1/databases/${db.id}/rows`, { title: 'Acme deal' })).body.row;
+    const got = await sMia.waitFor((e) => e.event === 'database' && e.data.rowId === row.id);
+    expect(got.data).toMatchObject({ kind: 'row.created', databaseId: db.id, workspaceId: wsId });
+    expect(JSON.stringify(got.data)).not.toContain('Acme');
+    await new Promise((r) => setTimeout(r, 200));
+    expect(sOtto.events.some((e) => e.event === 'database')).toBe(false);
+    sMia.close();
+    sOtto.close();
+  });
+});

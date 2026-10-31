@@ -59,6 +59,13 @@ export class InsightsService {
                '', w.name, null::uuid, w.id, w.name, ts_rank(m.search, q.query) * 0.7, ch.id, m.parent_id
         from messages m join channels ch on ch.id = m.channel_id join workspaces w on w.id = m.workspace_id, q
         where m.search @@ q.query and m.deleted_at is null and m.workspace_id in (${wsList})
+        union all
+        -- Database rows (title and page). The database id travels in channel_id.
+        select 'database_row', r.id, coalesce(nullif(r.title, ''), 'Untitled'),
+               ts_headline('simple', coalesce(nullif(r.body, ''), r.title), q.query, ${opts}),
+               '', db.name, null::uuid, w.id, w.name, ts_rank(r.search, q.query) * 0.9, db.id, null::uuid
+        from database_rows r join databases db on db.id = r.database_id and db.deleted_at is null join workspaces w on w.id = r.workspace_id, q
+        where r.search @@ q.query and r.deleted_at is null and r.workspace_id in (${wsList})
       ) r
       order by rank desc, title asc
       limit ${limit}`);
@@ -73,6 +80,7 @@ export class InsightsService {
       workspaceId: r.workspace_id!,
       workspaceName: r.workspace_name!,
       ...(r.type === 'message' ? { channelId: r.channel_id!, parentId: r.parent_id ?? null } : {}),
+      ...(r.type === 'database_row' ? { databaseId: r.channel_id! } : {}),
     }));
   }
 

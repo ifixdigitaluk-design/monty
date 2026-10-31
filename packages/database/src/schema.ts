@@ -789,6 +789,110 @@ export const attachments = pgTable(
   ],
 );
 
+/**
+ * Notion-style databases: a table of rows with typed fields (properties), shown through saved views.
+ * Cell values live in `database_rows.values` keyed by field id; the row title is its own column.
+ */
+export const databases = pgTable(
+  'databases',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'databases_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('databases_workspace_idx').on(t.workspaceId),
+  ],
+);
+
+export const databaseFields = pgTable(
+  'database_fields',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** text | number | select | multi_select | date | checkbox | person | url */
+    type: text('type').notNull(),
+    /** For select / multi_select: { choices: [{ id, label, color }] }. */
+    options: jsonb('options').$type<{ choices?: { id: string; label: string; color: string }[] }>().notNull().default(sql`'{}'::jsonb`),
+    position: doublePrecision('position').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'database_fields_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_fields_db_idx').on(t.databaseId),
+  ],
+);
+
+export const databaseRows = pgTable(
+  'database_rows',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    title: text('title').notNull().default(''),
+    values: jsonb('values').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** The row's page (markdown), like opening a Notion row. */
+    body: text('body').notNull().default(''),
+    /** Bumped only when the page body changes, so cell edits never conflict with someone writing the page. */
+    bodyVersion: integer('body_version').notNull().default(1),
+    position: doublePrecision('position').notNull().default(0),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    updatedById: uuid('updated_by_id')
+      .notNull()
+      .references(() => users.id),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'database_rows_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_rows_db_idx').on(t.databaseId, t.position),
+  ],
+);
+
+export const databaseViews = pgTable(
+  'database_views',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** table | board */
+    layout: text('layout').notNull().default('table'),
+    config: jsonb('config').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    position: doublePrecision('position').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'database_views_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_views_db_idx').on(t.databaseId),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -848,3 +952,7 @@ export type DocumentVersion = typeof documentVersions.$inferSelect;
 export type AiProposal = typeof aiProposals.$inferSelect;
 export type AutomationRule = typeof automationRules.$inferSelect;
 export type AutomationRun = typeof automationRuns.$inferSelect;
+export type DatabaseTable = typeof databases.$inferSelect;
+export type DatabaseField = typeof databaseFields.$inferSelect;
+export type DatabaseRow = typeof databaseRows.$inferSelect;
+export type DatabaseView = typeof databaseViews.$inferSelect;

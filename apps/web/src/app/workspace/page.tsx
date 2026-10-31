@@ -62,6 +62,9 @@ function WorkspaceView() {
           <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/docs?ws=${id}`}>
             Documents
           </Link>
+          <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/databases?ws=${id}`}>
+            Databases
+          </Link>
           {canInWorkspace(data.workspace.role, 'workspace.manage') ? (
             <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/automations?ws=${id}`}>
               Automations

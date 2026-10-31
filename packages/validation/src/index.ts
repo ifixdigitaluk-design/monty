@@ -3,7 +3,8 @@
  * Request schemas are strict: unknown fields are rejected.
  */
 import { z } from 'zod';
-import { isIsoDate } from '@monty/domain';
+import { CHOICE_COLORS, FIELD_TYPES, FILTER_OPS, isIsoDate } from '@monty/domain';
+import type { FieldType, ViewConfig } from '@monty/domain';
 
 export const isoDate = z.string().refine(isIsoDate, { message: 'Expected a date in YYYY-MM-DD format' });
 const uuid = z.uuid();
@@ -457,7 +458,7 @@ export const CalendarQuerySchema = z
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Range is limited to 62 days' });
 
 export interface SearchResultDto {
-  type: 'project' | 'task' | 'comment' | 'document' | 'message';
+  type: 'project' | 'task' | 'comment' | 'document' | 'message' | 'database_row';
   id: string;
   title: string;
   snippet: string;
@@ -470,6 +471,8 @@ export interface SearchResultDto {
   /** Chat results: where to open the message. */
   channelId?: string;
   parentId?: string | null;
+  /** Database row results: the database to open (projectName holds its name). */
+  databaseId?: string;
 }
 
 export interface CalendarEntryDto {
@@ -787,4 +790,147 @@ export interface AttachmentDto {
   uploaderId: string;
   createdAt: string;
   url: string;
+}
+
+// ---------- databases (Notion-style) ----------
+export const FieldTypeEnum = z.enum(FIELD_TYPES);
+const choiceSchema = z.strictObject({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
+  label: z.string().trim().min(1).max(100),
+  color: z.enum(CHOICE_COLORS),
+});
+const fieldOptions = z.strictObject({ choices: z.array(choiceSchema).max(100).optional() });
+const fieldName = z.string().trim().min(1, 'Required').max(100);
+export const CreateFieldSchema = z.strictObject({
+  id: uuid.optional(),
+  name: fieldName,
+  type: FieldTypeEnum,
+  options: fieldOptions.optional(),
+});
+export type CreateFieldInput = z.infer<typeof CreateFieldSchema>;
+export const UpdateFieldSchema = z.strictObject({
+  name: fieldName.optional(),
+  options: fieldOptions.optional(),
+  position: z.number().finite().optional(),
+});
+export type UpdateFieldInput = z.infer<typeof UpdateFieldSchema>;
+
+export const ViewConfigSchema = z.strictObject({
+  filters: z
+    .array(z.strictObject({ fieldId: z.string().max(64), op: z.enum(FILTER_OPS), value: z.union([z.string().max(500), z.number(), z.boolean(), z.null()]).optional() }))
+    .max(20)
+    .optional(),
+  match: z.enum(['all', 'any']).optional(),
+  sorts: z.array(z.strictObject({ fieldId: z.string().max(64), dir: z.enum(['asc', 'desc']) })).max(5).optional(),
+  groupBy: uuid.nullable().optional(),
+  hiddenFieldIds: z.array(uuid).max(100).optional(),
+});
+const viewName = z.string().trim().min(1, 'Required').max(100);
+export const CreateViewSchema = z.strictObject({
+  name: viewName,
+  layout: z.enum(['table', 'board']),
+  config: ViewConfigSchema.optional(),
+});
+export type CreateViewInput = z.infer<typeof CreateViewSchema>;
+export const UpdateViewSchema = z.strictObject({
+  name: viewName.optional(),
+  layout: z.enum(['table', 'board']).optional(),
+  config: ViewConfigSchema.optional(),
+  position: z.number().finite().optional(),
+});
+export type UpdateViewInput = z.infer<typeof UpdateViewSchema>;
+
+const rowTitle = z.string().max(500);
+const rowBody = z.string().max(200_000, 'Page is too long (200,000 characters max)');
+/** Cell values keyed by field id; `null` clears a cell. Each value is checked against its field type on the server. */
+const cellValues = z.record(uuid, z.unknown()).refine((v) => Object.keys(v).length <= 100, 'Too many fields');
+export const CreateRowSchema = z.strictObject({
+  id: uuid.optional(),
+  title: rowTitle.optional(),
+  values: cellValues.optional(),
+  body: rowBody.optional(),
+  position: z.number().finite().optional(),
+});
+export type CreateRowInput = z.infer<typeof CreateRowSchema>;
+export const UpdateRowSchema = z.strictObject({
+  title: rowTitle.optional(),
+  /** Merged into the row: only the cells sent change, so teammates editing other cells don't conflict. */
+  values: cellValues.optional(),
+  body: rowBody.optional(),
+  position: z.number().finite().optional(),
+  /** The row's `bodyVersion`; required when changing the page body, so two people's page edits never overwrite each other. */
+  expectedVersion: z.int().positive().optional(),
+});
+export type UpdateRowInput = z.infer<typeof UpdateRowSchema>;
+
+export const CreateDatabaseSchema = z.strictObject({
+  id: uuid.optional(),
+  name: z.string().trim().min(1, 'Required').max(200),
+  description: z.string().max(2000).optional(),
+  /** Import (e.g. a Notion or spreadsheet CSV): columns after the title, and rows of text aligned to them. */
+  import: z
+    .strictObject({
+      fields: z.array(z.strictObject({ name: fieldName, type: FieldTypeEnum, choices: z.array(z.string().trim().min(1).max(100)).max(100).optional() })).max(50),
+      rows: z.array(z.strictObject({ title: rowTitle, cells: z.array(z.string().max(10_000)).max(50) })).max(1000),
+    })
+    .optional(),
+});
+/** More imported rows (requests are limited to 1 MB, so large imports are sent in batches). Cells follow field order. */
+export const ImportRowsSchema = z.strictObject({
+  rows: z.array(z.strictObject({ title: rowTitle, cells: z.array(z.string().max(10_000)).max(50) })).min(1).max(1000),
+});
+export type ImportRowsInput = z.infer<typeof ImportRowsSchema>;
+export type CreateDatabaseInput = z.infer<typeof CreateDatabaseSchema>;
+export const UpdateDatabaseSchema = z.strictObject({
+  name: z.string().trim().min(1, 'Required').max(200).optional(),
+  description: z.string().max(2000).optional(),
+});
+export type UpdateDatabaseInput = z.infer<typeof UpdateDatabaseSchema>;
+
+export interface DatabaseSummaryDto {
+  id: string;
+  name: string;
+  description: string;
+  rowCount: number;
+  updatedAt: string;
+}
+export interface DatabaseFieldDto {
+  id: string;
+  name: string;
+  type: FieldType;
+  options: { choices?: { id: string; label: string; color: string }[] };
+  position: number;
+}
+export interface DatabaseViewDto {
+  id: string;
+  name: string;
+  layout: 'table' | 'board';
+  config: ViewConfig;
+  position: number;
+}
+export interface DatabaseRowDto {
+  id: string;
+  title: string;
+  values: Record<string, unknown>;
+  /** Whether the row's page has content (the body itself comes from GET /database-rows/:id). */
+  hasBody: boolean;
+  body?: string;
+  position: number;
+  version: number;
+  /** Changes only when the page body changes; send it as expectedVersion when saving the page. */
+  bodyVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; name: string };
+  updatedBy: { id: string; name: string };
+}
+export interface DatabaseDto {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  role: 'ADMIN' | 'MEMBER' | 'VIEWER';
+  fields: DatabaseFieldDto[];
+  views: DatabaseViewDto[];
+  rows: DatabaseRowDto[];
 }
