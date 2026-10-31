@@ -15,6 +15,7 @@ import { badRequest, conflict } from '../common/errors';
 import { toProjectDto } from '../common/mappers';
 import { DbService } from '../db/db.service';
 import { AccessService } from '../tenancy/access.service';
+import { EntitlementsService } from '../billing/entitlements.service';
 
 const TRACKED = ['name', 'objective', 'lifecycle', 'priority', 'ownerId', 'startDate', 'targetDate'] as const;
 
@@ -23,6 +24,7 @@ export class ProjectsService {
   constructor(
     private readonly dbs: DbService,
     private readonly access: AccessService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async list(userId: string, workspaceId: string) {
@@ -63,6 +65,7 @@ export class ProjectsService {
       throw badRequest('Start date must be on or before the target date');
     }
     await this.access.assertCanBeAssigned(input.ownerId, workspaceId, 'ownerId');
+    await this.entitlements.assertWithinLimit(workspace.organisationId, 'projects');
 
     try {
       const p = await this.dbs.db.transaction(async (tx) => {

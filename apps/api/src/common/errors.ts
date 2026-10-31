@@ -11,6 +11,7 @@ export type ErrorCode =
   | 'VERSION_CONFLICT'
   | 'EMAIL_TAKEN'
   | 'RATE_LIMITED'
+  | 'PLAN_LIMIT_REACHED'
   | 'INTERNAL';
 
 export class AppException extends HttpException {

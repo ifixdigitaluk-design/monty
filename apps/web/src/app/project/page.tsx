@@ -5,6 +5,7 @@ import { canInWorkspace } from '@monty/domain';
 import type { ActivityDto, DependencyDto, MilestoneDto, ProjectDetailDto, ProjectLifecycle, TaskDto, UpdateProjectInput } from '@monty/validation';
 import { CommentThread } from '@/components/CommentThread';
 import { Milestones } from '@/components/project/Milestones';
+import { AiPlanner } from '@/components/project/AiPlanner';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -45,6 +46,7 @@ function ProjectView() {
   const [view, setView] = useState<'list' | 'board'>('list');
   const [openTaskId, setOpenTaskId] = useState<string | null>(() => params.get('task'));
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [aiOpen, setAiOpen] = useState(false);
   const pending = useRef(0);
   // Latest server version per record, read at send time (not render time) so queued edits never use a stale version.
   const versions = useRef(new Map<string, number>());
@@ -272,7 +274,10 @@ function ProjectView() {
                 </button>
               ))}
             </div>
-            {canEdit ? <QuickAdd onAdd={(title) => createTask(title)} /> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {canEdit ? <Button onClick={() => setAiOpen(true)}>✦ Plan with AI</Button> : null}
+              {canEdit ? <QuickAdd onAdd={(title) => createTask(title)} /> : null}
+            </div>
           </div>
 
           {tasks.length === 0 ? (
@@ -314,6 +319,7 @@ function ProjectView() {
         </div>
       </div>
 
+      {aiOpen ? <AiPlanner projectId={project.id} open={aiOpen} onClose={() => setAiOpen(false)} onApplied={() => void load()} /> : null}
       {openTask ? (
         <TaskDrawer
           key={openTask.id}

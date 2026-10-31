@@ -29,6 +29,7 @@ const updatedAt = () =>
 const pk = () => uuid('id').primaryKey().defaultRandom();
 
 export const organisationKind = pgEnum('organisation_kind', ['PERSONAL', 'TEAM']);
+export const plan = pgEnum('plan', ['FREE', 'PRO', 'TEAM', 'BUSINESS', 'ENTERPRISE']);
 export const organisationRole = pgEnum('organisation_role', ['OWNER', 'ADMIN', 'MEMBER', 'GUEST']);
 export const workspaceRole = pgEnum('workspace_role', ['ADMIN', 'MEMBER', 'VIEWER']);
 export const projectLifecycle = pgEnum('project_lifecycle', ['DRAFT', 'ACTIVE', 'IN_REVIEW', 'COMPLETED', 'CANCELLED']);
@@ -70,6 +71,8 @@ export const organisations = pgTable('organisations', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   kind: organisationKind('kind').notNull(),
+  /** Subscription tier. Changed by billing (provider integration pending) or operations, never by the client. */
+  plan: plan('plan').notNull().default('FREE'),
   /** Set only for PERSONAL organisations; unique → at most one personal org per user. */
   personalOwnerId: uuid('personal_owner_id')
     .unique()
@@ -460,6 +463,41 @@ export const documentVersions = pgTable(
   (t) => [index('document_versions_doc_idx').on(t.documentId, t.createdAt)],
 );
 
+export const aiProposalStatus = pgEnum('ai_proposal_status', ['PENDING', 'APPLIED', 'REJECTED']);
+
+/** AI output is stored as a proposal; nothing changes until a person with permission approves it. */
+export const aiProposals = pgTable(
+  'ai_proposals',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    kind: text('kind').notNull(),
+    status: aiProposalStatus('status').notNull().default('PENDING'),
+    provider: text('provider').notNull(),
+    model: text('model'),
+    requestedById: uuid('requested_by_id')
+      .notNull()
+      .references(() => users.id),
+    input: jsonb('input').$type<Record<string, unknown>>().notNull(),
+    output: jsonb('output').$type<Record<string, unknown>>().notNull(),
+    decidedById: uuid('decided_by_id').references(() => users.id),
+    decidedAt: ts('decided_at'),
+    appliedEntityIds: jsonb('applied_entity_ids').$type<string[]>(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({
+      name: 'ai_proposals_project_workspace_fk',
+      columns: [t.projectId, t.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId],
+    }).onDelete('cascade'),
+    index('ai_proposals_project_idx').on(t.projectId, t.createdAt),
+    index('ai_proposals_org_idx').on(t.organisationId, t.createdAt),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -516,3 +554,4 @@ export type Comment = typeof comments.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type DocumentVersion = typeof documentVersions.$inferSelect;
+export type AiProposal = typeof aiProposals.$inferSelect;

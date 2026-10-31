@@ -4,6 +4,7 @@
  */
 import type {
   ActivityDto,
+  AiProposalDto,
   CreateDocumentInput,
   DocumentDto,
   DocumentSummaryDto,
@@ -120,6 +121,16 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
     },
+    ai: {
+      status: () => request<{ provider: string; label: string; model: string | null }>('GET', '/ai/status'),
+      plan: (projectId: string, guidance?: string) =>
+        request<{ proposal: AiProposalDto }>('POST', `/projects/${projectId}/ai/plan`, guidance ? { guidance } : {}),
+      proposals: (projectId: string) => request<{ proposals: AiProposalDto[] }>('GET', `/projects/${projectId}/ai/proposals`),
+      apply: (id: string, taskIndexes: number[]) => request<{ proposal: AiProposalDto }>('POST', `/ai/proposals/${id}/apply`, { taskIndexes }),
+      reject: (id: string) => request<void>('POST', `/ai/proposals/${id}/reject`),
+    },
+    usage: (orgId: string) =>
+      request<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> }>('GET', `/organisations/${orgId}/usage`),
     documents: {
       list: (workspaceId: string, projectId?: string) =>
         request<{ documents: DocumentSummaryDto[] }>('GET', `/workspaces/${workspaceId}/documents${projectId ? `?projectId=${projectId}` : ''}`),

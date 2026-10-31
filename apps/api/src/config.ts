@@ -21,6 +21,10 @@ const EnvSchema = z.object({
   SMTP_PASS: z.string().optional(),
   /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
   REQUIRE_RLS: z.enum(['true', 'false']).optional(),
+  /** 'local' = built-in deterministic planner (no data leaves the server); 'anthropic' needs AI_API_KEY and AI_MODEL. */
+  AI_PROVIDER: z.enum(['local', 'anthropic']).default('local'),
+  AI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -37,6 +41,7 @@ export interface AppConfig {
   sessionTtlDays: number;
   appUrl: string;
   requireRls: boolean;
+  ai: { provider: 'local' | 'anthropic'; apiKey?: string; model?: string };
   mail: {
     transport: 'log' | 'smtp';
     from: string;
@@ -55,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (isProduction && e.MAIL_TRANSPORT !== 'smtp') {
     throw new Error('Invalid environment: production requires MAIL_TRANSPORT=smtp (password reset and verification depend on email)');
   }
+  if (e.AI_PROVIDER === 'anthropic' && (!e.AI_API_KEY || !e.AI_MODEL)) throw new Error('Invalid environment: AI_PROVIDER=anthropic requires AI_API_KEY and AI_MODEL');
   if (isProduction && !e.APP_URL.startsWith('https://')) throw new Error('Invalid environment: APP_URL must be https in production');
   return {
     nodeEnv: e.NODE_ENV,
@@ -71,6 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sessionTtlDays: 30,
     appUrl: e.APP_URL.replace(/\/$/, ''),
     requireRls: e.REQUIRE_RLS ? e.REQUIRE_RLS === 'true' : isProduction,
+    ai: { provider: e.AI_PROVIDER, apiKey: e.AI_API_KEY, model: e.AI_MODEL },
     mail: {
       transport: e.MAIL_TRANSPORT,
       from: e.MAIL_FROM,

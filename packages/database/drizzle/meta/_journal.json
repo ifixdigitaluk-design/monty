@@ -71,6 +71,27 @@
       "when": 1793435137996,
       "tag": "0009_outbox_realtime",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793435861130,
+      "tag": "0010_ai_proposals",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793435862002,
+      "tag": "0011_ai_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793435951140,
+      "tag": "0012_org_plan",
+      "breakpoints": true
     }
   ]
 }

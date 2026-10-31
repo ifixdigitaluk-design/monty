@@ -39,6 +39,7 @@ import { DbService } from '../db/db.service';
 import { AccessService } from './access.service';
 import { MailService } from '../mail/mail.service';
 import { invitationEmail } from '../mail/templates';
+import { EntitlementsService } from '../billing/entitlements.service';
 
 const INVITE_TTL_DAYS = 7;
 const WS_RANK: Record<WorkspaceRole, number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 };
@@ -62,6 +63,7 @@ export class MembersService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   // ---------- helpers ----------
@@ -297,6 +299,7 @@ export class MembersService {
       .where(eq(users.email, input.email))
       .limit(1);
     if (existingMember) throw conflict('CONFLICT', 'This person is already a member of the organisation.');
+    await this.entitlements.assertWithinLimit(organisationId, 'members');
 
     const token = randomBytes(32).toString('base64url');
     try {
@@ -487,6 +490,12 @@ export class MembersService {
       );
       return { organisationId: inv.organisationId, workspaceId };
     }));
+  }
+
+  async usage(actorId: string, organisationId: string) {
+    const { role } = await this.orgContext(actorId, organisationId);
+    if (!canInOrg(role, 'org.read')) throw forbidden();
+    return this.entitlements.summary(organisationId);
   }
 
   async auditLog(actorId: string, organisationId: string) {

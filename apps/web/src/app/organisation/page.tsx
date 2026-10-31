@@ -18,7 +18,7 @@ export default function OrganisationPage() {
   );
 }
 
-type Tab = 'members' | 'invitations' | 'audit';
+type Tab = 'members' | 'invitations' | 'audit' | 'plan';
 
 function OrganisationView() {
   const id = useSearchParams().get('id');
@@ -90,6 +90,7 @@ function OrganisationView() {
     { key: 'members', label: `Members (${members.length})`, show: true },
     { key: 'invitations', label: 'Invitations', show: canManage },
     { key: 'audit', label: 'Audit log', show: canManage },
+    { key: 'plan', label: 'Plan & usage', show: true },
   ];
 
   return (
@@ -153,6 +154,7 @@ function OrganisationView() {
 
       {tab === 'invitations' && canManage ? <Invitations orgId={id} workspaces={org.workspaces} /> : null}
       {tab === 'audit' && canManage ? <AuditLog orgId={id} /> : null}
+      {tab === 'plan' ? <PlanUsage orgId={id} /> : null}
     </div>
   );
 }
@@ -361,6 +363,44 @@ function AuditLog({ orgId }: { orgId: string }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const USAGE_LABEL: Record<string, string> = {
+  projects: 'Projects',
+  members: 'Members and pending invitations',
+  aiRequestsPerMonth: 'AI requests this month',
+  automationRules: 'Automation rules',
+};
+
+function PlanUsage({ orgId }: { orgId: string }) {
+  const [data, setData] = useState<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> } | null>(null);
+  useEffect(() => {
+    api.usage(orgId).then(setData).catch(() => undefined);
+  }, [orgId]);
+  if (!data) return <PageLoading />;
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-surface p-4" data-plan={data.plan}>
+      <p>
+        Current plan: <strong>{data.plan.charAt(0) + data.plan.slice(1).toLowerCase()}</strong>
+      </p>
+      <ul className="space-y-2">
+        {Object.entries(data.usage).map(([k, used]) => {
+          const limit = data.limits[k];
+          const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+          return (
+            <li key={k}>
+              <div className="flex justify-between text-[13px]">
+                <span>{USAGE_LABEL[k] ?? k}</span>
+                <span className="text-muted">{used} / {limit ?? 'unlimited'}</span>
+              </div>
+              {limit ? <div className="mt-1 h-1.5 rounded-full bg-surface-2"><div className={pct >= 100 ? 'h-1.5 rounded-full bg-warning' : 'h-1.5 rounded-full bg-accent'} style={{ width: `${pct}%` }} /></div> : null}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[12px] text-muted">Online upgrades aren’t available yet — contact support to change plan.</p>
     </div>
   );
 }

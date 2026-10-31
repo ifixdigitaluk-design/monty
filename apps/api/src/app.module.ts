@@ -26,6 +26,9 @@ import { DocumentsController } from './documents/documents.controller';
 import { DocumentsService } from './documents/documents.service';
 import { RealtimeController } from './realtime/realtime.controller';
 import { RealtimeService } from './realtime/realtime.service';
+import { AiController } from './ai/ai.controller';
+import { AiService } from './ai/ai.service';
+import { EntitlementsService } from './billing/entitlements.service';
 import { AccountRecoveryService } from './auth/account-recovery.service';
 import { DevMailboxController, MailService } from './mail/mail.service';
 
@@ -61,6 +64,7 @@ export class AppModule {
         InsightsController,
         DocumentsController,
         RealtimeController,
+        AiController,
         // Development-only mailbox: never registered in production or with a real mail provider.
         ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
       ],
@@ -75,6 +79,8 @@ export class AppModule {
         InsightsService,
         DocumentsService,
         RealtimeService,
+        AiService,
+        EntitlementsService,
         AccessService,
         OrganisationsService,
         ProjectsService,

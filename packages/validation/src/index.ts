@@ -479,3 +479,41 @@ export interface DocumentVersionDto {
   updatedAt: string;
   body?: string;
 }
+
+// ---------- AI ----------
+/** Strict shape every AI provider must return; anything else is rejected before it is stored or shown. */
+export const AiPlanSchema = z.strictObject({
+  summary: z.string().trim().max(1000),
+  tasks: z
+    .array(
+      z.strictObject({
+        title: z.string().trim().min(1).max(200),
+        description: z.string().trim().max(2000).default(''),
+        /** Days after the plan start (today) when the task should be due. */
+        dueInDays: z.int().min(0).max(730).nullable().default(null),
+        /** Indexes (into this array) of tasks this one waits for; must point backwards. */
+        dependsOn: z.array(z.int().min(0)).max(10).default([]),
+      }),
+    )
+    .min(1)
+    .max(30),
+});
+export type AiPlan = z.infer<typeof AiPlanSchema>;
+
+export const RequestPlanSchema = z.strictObject({ guidance: z.string().trim().max(1000).optional() });
+export const ApplyProposalSchema = z.strictObject({ taskIndexes: z.array(z.int().min(0)).min(1).max(30) });
+export type ApplyProposalInput = z.infer<typeof ApplyProposalSchema>;
+
+export interface AiProposalDto {
+  id: string;
+  projectId: string;
+  status: 'PENDING' | 'APPLIED' | 'REJECTED';
+  provider: string;
+  providerLabel: string;
+  model: string | null;
+  plan: AiPlan;
+  requestedBy: { id: string; name: string };
+  createdAt: string;
+  decidedAt: string | null;
+  appliedEntityIds: string[];
+}

@@ -5,3 +5,4 @@ export * from './tasks';
 export * from './membership';
 export * from './dependencies';
 export * from './search';
+export * from './entitlements';

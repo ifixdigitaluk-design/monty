@@ -53,6 +53,11 @@ export class MembersController {
     await this.members.removeMember(auth.userId, orgId, userId, clientOf(req));
   }
 
+  @Get('organisations/:orgId/usage')
+  async usage(@Auth() auth: AuthContext, @Param('orgId', UuidPipe) orgId: string) {
+    return this.members.usage(auth.userId, orgId);
+  }
+
   @Get('organisations/:orgId/audit')
   async audit(@Auth() auth: AuthContext, @Param('orgId', UuidPipe) orgId: string) {
     return { entries: await this.members.auditLog(auth.userId, orgId) };
