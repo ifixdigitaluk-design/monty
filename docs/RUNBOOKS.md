@@ -107,7 +107,7 @@ Metrics are per instance, so scrape every API instance.
 - Search returned 429 after 120 requests/min because all virtual users share one IP: the per-IP limit works, but would also throttle a real office behind one NAT (see SECURITY_PLAN §3).
 - Not yet measured: multiple instances, a separate DB host, SSE connection counts, large tenants (100k+ tasks).
 
-## 8. Private-beta readiness checklist (updated 31 Oct 2026, session 5)
+## 8. Private-beta readiness checklist (updated 31 Oct 2026, after first green CI)
 Statuses: **Completed and tested** · **Implemented but externally unverified** · **Requires my action** (founder) · **Requires external provider** · **Requires legal review** · **Not completed**.
 
 | Item | Status | Evidence / what's missing |
@@ -119,13 +119,13 @@ Statuses: **Completed and tested** · **Implemented but externally unverified** 
 | Retention and deletion rules reviewed by a privacy professional | Requires legal review | DATA_LIFECYCLE.md is an engineering proposal |
 | Privacy policy, terms, DPA, sub-processor list, cookie notice | Requires legal review | Not written |
 | Calendar and page accessibility (axe, keyboard) | Completed and tested | `accessibility.spec`: 0 violations on 14 page states incl. phone width; keyboard grid test. Manual screen-reader testing (NVDA/VoiceOver) not done |
-| Container images (api, web, migrate), non-root, read-only, health checks, graceful shutdown | Implemented but externally unverified | Built and run here with a **locally built Ubuntu 24.04 + Node 22.23 substitute base**, because Docker Hub is blocked. The official `node:22-bookworm-slim` build is in CI but not yet run |
+| Container images (api, web, migrate), non-root, read-only, health checks, graceful shutdown | Implemented but externally unverified | **Build on the official `node:22.21.0-bookworm-slim` base passes in GitHub CI** (with the UID 10001 check). Running the official-base images (health, shutdown, read-only) was only done here on a substitute base |
 | `compose.yaml` full stack (with official `postgres:16` image) | Implemented but externally unverified | `docker compose config` validated; `up` not run (images can't be pulled here) |
 | Metrics endpoint, error-reporting hook, job/email/automation monitoring | Implemented but externally unverified | `observability.e2e`; scraped from a production-mode container. No monitoring service is connected, so **no alert is active** |
 | Monitoring stack, alert routing, uptime checks, log retention | Requires external provider | See §1 |
 | Hosting, TLS certificates, domain, managed Postgres with PITR | Requires external provider / my action | No provider chosen |
 | PITR restore drill on the chosen provider | Requires external provider | The logical restore drill passed locally |
-| CI green on GitHub (tests, e2e, restore drill, image build) | Requires my action | Repository not pushed; create `ifixdigitaluk-design/monty` and connect it, or push the bundle |
+| CI green on GitHub (tests, e2e, restore drill, image build) | Completed and tested | All steps green on `0637fa3`; PR #1 merged into `main` (`3a80e78`). The first CI run caught a real crash (unhandled error on a connection killed mid-transaction), fixed with a regression test |
 | External penetration test | Requires external provider | |
 | Hosted AI provider check (if enabled) | Requires external provider | Needs an `AI_API_KEY`; the default local planner works without it |
 | Shared rate limits / presence for >1 API instance (Redis) | Not completed | Run a single API instance for the beta, or add Redis |

@@ -29,7 +29,7 @@ Implementation status and verification status are recorded separately below.
 | F-14 | My Tasks (cross-workspace, grouped) | Implemented | Verified | API test; Playwright |
 | F-15 | Web UI: auth, sidebar, workspace, project list/board, task drawer, readiness panel, activity, sessions, dark mode, mobile layout | Implemented | Verified | 4 Playwright flows; screenshots reviewed (light, dark, 390px mobile) |
 | F-16 | Structured JSON logging with request IDs | Implemented | Partially tested | `X-Request-Id` asserted; log content reviewed manually |
-| F-17 | CI workflow (GitHub Actions) | Implemented | **Not verified** | not run yet: the repo hasn't been pushed |
+| F-17 | CI workflow (GitHub Actions) | Implemented | Verified | green on GitHub (`0637fa3`): install, audit, build, typecheck, lint, unit/integration, Playwright e2e, backup/restore drill, Docker build on the official base image |
 | — | Client write serialisation (no false conflicts on rapid edits) | Implemented | Verified | regression Playwright test (bug found in session 1) |
 | B-01 | Invitations: create, preview, accept, revoke; email-bound, single-use, expiring | Implemented | Verified | 7 API tests; Playwright invite → sign-up → accept, and wrong-account test |
 | B-02 | Member management: list, role change, remove, leave; last-owner protection; workspace access grant/change/remove | Implemented | Verified | 8 API tests incl. concurrent demotion race; Playwright role change, access removal and member removal |
@@ -300,3 +300,20 @@ Not started: Redis rate limiting (B-07), MFA, labels, attachments, custom fields
    - **Late commits:** a `REQUEST_TIMEOUT` answer can coexist with a late commit (the user is told to refresh).
    - **Images built on a substitute base:** they were built and run on a different base distro than the official image.
    - **Retention periods** for audit and activity data need legal confirmation.
+
+## Session 5 addendum: first GitHub CI run
+- Repository `ifixdigitaluk-design/monty` (public). PR #1 (`beta-readiness` → `main`) merged as `3a80e78` with full history.
+- **First CI run failed** at `pnpm test`. All 154 tests passed, but Vitest reported 2 uncaught errors.
+  - **Cause:** a Postgres connection terminated while checked out (idle-in-transaction timeout) emitted an error with no listener. In production this would have exited the API process.
+  - **Fix (`0637fa3`):**
+    - A permanent per-connection error listener.
+    - Two parallel-query blocks inside one transaction made sequential, which removes the pg deprecation warning.
+    - A regression test that reproduces the failure without the fix.
+- **Second run: all steps green.** These ran outside this environment for the first time:
+  - the Playwright e2e suite
+  - the backup/restore drill on PostgreSQL 16
+  - the Docker build on the official Node base image
+- **Still unverified:**
+  - running the official-base images
+  - `docker compose up` with the official Postgres image
+  - everything marked "Requires external provider" or "Requires legal review" in RUNBOOKS §8
