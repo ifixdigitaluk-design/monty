@@ -165,6 +165,34 @@ export const projects = pgTable(
   ],
 );
 
+export const milestones = pgTable(
+  'milestones',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    name: text('name').notNull(),
+    dueDate: date('due_date', { mode: 'string' }),
+    completedAt: ts('completed_at'),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({
+      name: 'milestones_project_workspace_fk',
+      columns: [t.projectId, t.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId],
+    }).onDelete('cascade'),
+    index('milestones_project_idx').on(t.projectId, t.deletedAt),
+  ],
+);
+
 export const tasks = pgTable(
   'tasks',
   {
@@ -173,6 +201,7 @@ export const tasks = pgTable(
     workspaceId: uuid('workspace_id').notNull(),
     projectId: uuid('project_id').notNull(),
     parentTaskId: uuid('parent_task_id'),
+    milestoneId: uuid('milestone_id').references(() => milestones.id, { onDelete: 'set null' }),
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
     status: taskStatus('status').notNull().default('TODO'),
@@ -311,6 +340,63 @@ export const invitations = pgTable(
   ],
 );
 
+export const comments = pgTable(
+  'comments',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    /** Null = project discussion; otherwise a comment on this task. */
+    taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id),
+    /** Plain text; mentions are encoded as <@user-uuid>. */
+    body: text('body').notNull(),
+    createdAt: createdAt(),
+    editedAt: ts('edited_at'),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({
+      name: 'comments_project_workspace_fk',
+      columns: [t.projectId, t.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId],
+    }).onDelete('cascade'),
+    index('comments_task_idx').on(t.taskId, t.createdAt),
+    index('comments_project_idx').on(t.projectId, t.createdAt),
+  ],
+);
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    organisationId: uuid('organisation_id')
+      .notNull()
+      .references(() => organisations.id, { onDelete: 'cascade' }),
+    workspaceId: uuid('workspace_id'),
+    projectId: uuid('project_id'),
+    type: text('type').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** Prevents duplicate notifications for the same event (idempotent fan-out). */
+    dedupeKey: text('dedupe_key').notNull(),
+    createdAt: createdAt(),
+    readAt: ts('read_at'),
+  },
+  (t) => [
+    unique('notifications_dedupe_unique').on(t.userId, t.dedupeKey),
+    index('notifications_user_idx').on(t.userId, t.readAt, t.createdAt),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -362,3 +448,6 @@ export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type UserToken = typeof userTokens.$inferSelect;
+export type Milestone = typeof milestones.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, desc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { evaluateReadiness, IsoDate, ReadinessReport } from '@monty/domain';
-import { activityEvents, isUniqueViolation, projects, tasks, users } from '@monty/database';
+import { activityEvents, isUniqueViolation, projects, taskDependencies, tasks, users } from '@monty/database';
 import type {
   ActivityDto,
   CreateProjectInput,
@@ -196,9 +196,15 @@ export class ProjectsService {
       })
       .from(tasks)
       .where(and(eq(tasks.projectId, projectId), isNull(tasks.deletedAt)));
+    const edges = await this.dbs.db
+      .select({ taskId: taskDependencies.taskId, dependsOnTaskId: taskDependencies.dependsOnTaskId })
+      .from(taskDependencies)
+      .where(inArray(taskDependencies.taskId, rows.length ? rows.map((r) => r.id) : ['00000000-0000-0000-0000-000000000000']));
+    const deps = new Map<string, string[]>();
+    for (const e of edges) deps.set(e.taskId, [...(deps.get(e.taskId) ?? []), e.dependsOnTaskId]);
     return evaluateReadiness(
       { objective: project.objective, ownerId: project.ownerId, targetDate: project.targetDate, lifecycle: project.lifecycle },
-      rows,
+      rows.map((r) => ({ ...r, dependsOn: deps.get(r.id) ?? [] })),
       today,
     );
   }

@@ -1,6 +1,8 @@
 'use client';
 
-import type { MemberDto, TaskDto } from '@monty/validation';
+import type { DependencyDto, MemberDto, MilestoneDto, TaskDto } from '@monty/validation';
+import { CommentThread } from '../CommentThread';
+import { Select } from '../ui';
 import { FormEvent, useEffect, useState } from 'react';
 import { Button, Field, Input, Textarea } from '../ui';
 import { AssigneeSelect, DateInput, PrioritySelect, StatusSelect, TaskChanges } from './TaskControls';
@@ -16,10 +18,36 @@ interface Props {
   onDelete: (task: TaskDto) => Promise<void>;
   onAddSubtask: (parent: TaskDto, title: string) => Promise<void>;
   onOpen: (taskId: string) => void;
+  milestones: MilestoneDto[];
+  allTasks: TaskDto[];
+  dependencies: DependencyDto[];
+  onAddDependency: (task: TaskDto, dependsOnTaskId: string) => Promise<void>;
+  onRemoveDependency: (task: TaskDto, dependencyId: string) => Promise<void>;
+  canModerate: boolean;
 }
 
 /** Side panel with every task field. Text fields save on blur; selects save on change. */
-export function TaskDrawer({ task, subtasks, members, canEdit, onClose, onChange, onDelete, onAddSubtask, onOpen }: Props) {
+export function TaskDrawer({
+  task,
+  subtasks,
+  members,
+  canEdit,
+  onClose,
+  onChange,
+  onDelete,
+  onAddSubtask,
+  onOpen,
+  milestones,
+  allTasks,
+  dependencies,
+  onAddDependency,
+  onRemoveDependency,
+  canModerate,
+}: Props) {
+  const waitingOn = dependencies.filter((d) => d.taskId === task.id);
+  const blocking = dependencies.filter((d) => d.dependsOnTaskId === task.id);
+  const titleOf = (id: string) => allTasks.find((t) => t.id === id);
+  const candidates = allTasks.filter((t) => t.id !== task.id && !waitingOn.some((d) => d.dependsOnTaskId === t.id));
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
   const [blocked, setBlocked] = useState(task.blockedReason ?? '');
@@ -109,6 +137,62 @@ export function TaskDrawer({ task, subtasks, members, canEdit, onClose, onChange
             <DateInput label="Due date" value={task.dueDate} disabled={!canEdit} onChange={(v) => save({ dueDate: v })} />
           </Field>
         </div>
+        <Field label="Milestone" htmlFor="task-milestone">
+          <Select
+            id="task-milestone"
+            aria-label={`Milestone of ${task.title}`}
+            className="h-9 w-full"
+            value={task.milestoneId ?? ''}
+            disabled={!canEdit}
+            onChange={(e) => save({ milestoneId: e.target.value || null })}
+          >
+            <option value="">No milestone</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div>
+          <p className="mb-1 text-[12px] font-medium text-muted">Waiting on</p>
+          {waitingOn.length === 0 ? <p className="text-[13px] text-muted">Nothing — can start any time.</p> : null}
+          <ul className="space-y-1">
+            {waitingOn.map((d) => {
+              const dep = titleOf(d.dependsOnTaskId);
+              return (
+                <li key={d.id} className="flex items-center justify-between gap-2 rounded-md bg-surface-2 px-2 py-1 text-[13px]">
+                  <button className="truncate text-left hover:underline" onClick={() => onOpen(d.dependsOnTaskId)}>
+                    {dep?.title ?? 'Task'} {dep?.status === 'DONE' ? '✓' : ''}
+                  </button>
+                  {canEdit ? (
+                    <button className="text-muted hover:text-danger" aria-label={`Remove dependency on ${dep?.title ?? 'task'}`} onClick={() => void onRemoveDependency(task, d.id)}>
+                      ✕
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {canEdit && candidates.length > 0 ? (
+            <Select
+              aria-label="Add dependency"
+              className="mt-1 w-full"
+              value=""
+              onChange={(e) => e.target.value && void onAddDependency(task, e.target.value)}
+            >
+              <option value="">+ Waits for another task…</option>
+              {candidates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </Select>
+          ) : null}
+          {blocking.length > 0 ? (
+            <p className="mt-1 text-[12px] text-muted">Blocks: {blocking.map((d) => titleOf(d.taskId)?.title ?? 'task').join(', ')}</p>
+          ) : null}
+        </div>
         <Field label="Blocked by" htmlFor="task-blocked" hint="Describe what is blocking this task. Clear it when resolved.">
           <Input
             id="task-blocked"
@@ -130,6 +214,7 @@ export function TaskDrawer({ task, subtasks, members, canEdit, onClose, onChange
           />
         </Field>
 
+        <CommentThread target={{ taskId: task.id }} members={members} canPost={canEdit} canModerate={canModerate} label="Comments" />
         {task.parentTaskId === null ? (
           <div>
             <p className="mb-2 text-[12px] font-medium text-muted">Subtasks</p>

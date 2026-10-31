@@ -103,6 +103,7 @@ const taskFields = {
   estimateMinutes: z.int().min(0).max(100000).nullable(),
   blockedReason: z.string().trim().max(1000).nullable(),
   sortOrder: z.number().finite(),
+  milestoneId: uuid.nullable(),
 };
 
 export const CreateTaskSchema = z.strictObject({
@@ -117,6 +118,7 @@ export const CreateTaskSchema = z.strictObject({
   dueDate: taskFields.dueDate.optional(),
   estimateMinutes: taskFields.estimateMinutes.optional(),
   blockedReason: taskFields.blockedReason.optional(),
+  milestoneId: taskFields.milestoneId.optional(),
 });
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
 
@@ -132,8 +134,26 @@ export const UpdateTaskSchema = z.strictObject({
   estimateMinutes: taskFields.estimateMinutes.optional(),
   blockedReason: taskFields.blockedReason.optional(),
   sortOrder: taskFields.sortOrder.optional(),
+  milestoneId: taskFields.milestoneId.optional(),
 });
 export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
+
+// ---------- milestones, dependencies, comments, notifications ----------
+export const CreateMilestoneSchema = z.strictObject({ id: uuid.optional(), name: name, dueDate: isoDate.nullable().optional() });
+export type CreateMilestoneInput = z.infer<typeof CreateMilestoneSchema>;
+export const UpdateMilestoneSchema = z.strictObject({
+  expectedVersion: z.int().positive(),
+  name: name.optional(),
+  dueDate: isoDate.nullable().optional(),
+  completed: z.boolean().optional(),
+});
+export type UpdateMilestoneInput = z.infer<typeof UpdateMilestoneSchema>;
+export const AddDependencySchema = z.strictObject({ dependsOnTaskId: uuid });
+export type AddDependencyInput = z.infer<typeof AddDependencySchema>;
+export const CreateCommentSchema = z.strictObject({ id: uuid.optional(), body: z.string().trim().min(1, 'Write something first').max(10000) });
+export type CreateCommentInput = z.infer<typeof CreateCommentSchema>;
+export const MarkNotificationsReadSchema = z.strictObject({ ids: z.array(uuid).max(500).optional() });
+export type MarkNotificationsReadInput = z.infer<typeof MarkNotificationsReadSchema>;
 
 export const TodayQuerySchema = z.strictObject({ today: isoDate.optional() });
 
@@ -237,6 +257,7 @@ export interface TaskDto {
   estimateMinutes: number | null;
   blockedReason: string | null;
   sortOrder: number;
+  milestoneId: string | null;
   completedAt: string | null;
   version: number;
   createdAt: string;
@@ -330,4 +351,49 @@ export interface AuditEntryDto {
   data: Record<string, unknown>;
   ip: string | null;
   createdAt: string;
+}
+
+export interface MilestoneDto {
+  id: string;
+  projectId: string;
+  name: string;
+  dueDate: string | null;
+  completedAt: string | null;
+  version: number;
+  taskTotal: number;
+  taskDone: number;
+}
+
+export interface DependencyDto {
+  id: string;
+  taskId: string;
+  dependsOnTaskId: string;
+}
+
+export interface CommentDto {
+  id: string;
+  projectId: string;
+  taskId: string | null;
+  author: { id: string; name: string };
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+export interface NotificationDto {
+  id: string;
+  type: 'mention' | 'assigned' | 'comment';
+  entityType: string;
+  entityId: string;
+  projectId: string | null;
+  actor: { id: string; name: string } | null;
+  data: Record<string, unknown>;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/** Mentions are stored as <@user-uuid> tokens inside comment bodies. */
+export const MENTION_PATTERN = /<@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>/gi;
+export function extractMentions(body: string): string[] {
+  return [...new Set([...body.matchAll(MENTION_PATTERN)].map((m) => m[1]!.toLowerCase()))];
 }

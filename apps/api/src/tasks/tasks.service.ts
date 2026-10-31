@@ -1,14 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
-import { isUniqueViolation, projects, tasks } from '@monty/database';
+import { DbOrTx, isUniqueViolation, projects, Task, tasks } from '@monty/database';
 import type { CreateTaskInput, MyTaskDto, TaskDto, UpdateTaskInput } from '@monty/validation';
 import { diff, recordChange } from '../activity/activity';
 import { badRequest, conflict } from '../common/errors';
 import { toTaskDto } from '../common/mappers';
 import { DbService } from '../db/db.service';
 import { AccessService } from '../tenancy/access.service';
+import { CollaborationService } from '../collaboration/collaboration.service';
 
-const TRACKED = ['title', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'blockedReason', 'estimateMinutes'] as const;
+const TRACKED = ['title', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'blockedReason', 'estimateMinutes', 'milestoneId'] as const;
 const SORT_GAP = 1024;
 
 @Injectable()
@@ -16,6 +17,7 @@ export class TasksService {
   constructor(
     private readonly dbs: DbService,
     private readonly access: AccessService,
+    private readonly collab: CollaborationService,
   ) {}
 
   async list(userId: string, projectId: string): Promise<TaskDto[]> {
@@ -38,6 +40,7 @@ export class TasksService {
       throw badRequest('Start date must be on or before the due date');
     }
     await this.access.assertCanBeAssigned(input.assigneeId, project.workspaceId, 'assigneeId');
+    await this.collab.assertMilestoneInProject(input.milestoneId, projectId);
     if (input.parentTaskId) {
       const parent = await this.dbs.db.query.tasks.findFirst({
         where: and(eq(tasks.id, input.parentTaskId), eq(tasks.projectId, projectId), isNull(tasks.deletedAt)),
@@ -69,6 +72,7 @@ export class TasksService {
             dueDate: input.dueDate ?? null,
             estimateMinutes: input.estimateMinutes ?? null,
             blockedReason: input.blockedReason || null,
+            milestoneId: input.milestoneId ?? null,
             sortOrder: (last?.m ?? 0) + SORT_GAP,
             completedAt: status === 'DONE' ? new Date() : null,
           })
@@ -85,6 +89,7 @@ export class TasksService {
           data: { title: t!.title },
           payload: { ...toTaskDto(t!) },
         });
+        if (t!.assigneeId) await this.notifyAssigned(tx, t!, userId, project.name);
         return t!;
       });
       return { task: toTaskDto(t), created: true };
@@ -110,6 +115,7 @@ export class TasksService {
   async update(userId: string, taskId: string, input: UpdateTaskInput): Promise<TaskDto> {
     const { task } = await this.access.requireTask(userId, taskId, 'task.update');
     if (input.assigneeId !== undefined) await this.access.assertCanBeAssigned(input.assigneeId, task.workspaceId, 'assigneeId');
+    if (input.milestoneId !== undefined) await this.collab.assertMilestoneInProject(input.milestoneId, task.projectId);
     const start = input.startDate !== undefined ? input.startDate : task.startDate;
     const due = input.dueDate !== undefined ? input.dueDate : task.dueDate;
     if (start && due && start > due) throw badRequest('Start date must be on or before the due date');
@@ -140,6 +146,7 @@ export class TasksService {
         data: { title: t.title, changes: diff(task, t, TRACKED) },
         payload: { ...toTaskDto(t) },
       });
+      if (t.assigneeId && t.assigneeId !== task.assigneeId) await this.notifyAssigned(tx, t, userId);
       return t;
     });
     if (!updated) {
@@ -197,5 +204,23 @@ export class TasksService {
       .orderBy(sql`${tasks.dueDate} asc nulls last`, asc(tasks.createdAt))
       .limit(500);
     return rows.map(({ task, projectName }) => ({ ...toTaskDto(task), projectName }));
+  }
+
+  private async notifyAssigned(tx: DbOrTx, t: Task, actorId: string, projectName?: string) {
+    await this.collab.notify(
+      {
+        recipients: [t.assigneeId!],
+        actorId,
+        organisationId: t.organisationId,
+        workspaceId: t.workspaceId,
+        projectId: t.projectId,
+        type: 'assigned',
+        entityType: 'task',
+        entityId: t.id,
+        data: { taskTitle: t.title, projectName: projectName ?? null },
+        dedupeKey: `assigned:${t.id}:${t.version}`,
+      },
+      tx,
+    );
   }
 }

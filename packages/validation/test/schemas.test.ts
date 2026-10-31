@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateInvitationSchema, CreateTaskSchema, RegisterSchema, UpdateProjectSchema, UpdateTaskSchema } from '../src';
+import { CreateInvitationSchema, extractMentions, CreateTaskSchema, RegisterSchema, UpdateProjectSchema, UpdateTaskSchema } from '../src';
 
 describe('validation schemas', () => {
   it('normalises email to lower case', () => {
@@ -31,5 +31,12 @@ describe('invitation schema', () => {
     expect(CreateInvitationSchema.safeParse({ email: 'A@B.co', role: 'MEMBER' }).success).toBe(true);
     expect(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'MEMBER', workspaceRole: 'VIEWER' }).success).toBe(false);
     expect(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'OWNER' }).success).toBe(false);
+  });
+});
+
+describe('mentions', () => {
+  it('extracts unique mentioned user ids', () => {
+    const a = '11111111-1111-4111-8111-111111111111';
+    expect(extractMentions(`hi <@${a}> and <@${a.toUpperCase()}> <@not-a-uuid>`)).toEqual([a]);
   });
 });

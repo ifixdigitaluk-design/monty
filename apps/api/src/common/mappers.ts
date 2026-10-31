@@ -38,6 +38,7 @@ export function toTaskDto(t: Task): TaskDto {
     estimateMinutes: t.estimateMinutes,
     blockedReason: t.blockedReason,
     sortOrder: t.sortOrder,
+    milestoneId: t.milestoneId,
     completedAt: t.completedAt?.toISOString() ?? null,
     version: t.version,
     createdAt: t.createdAt.toISOString(),

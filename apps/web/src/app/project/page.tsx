@@ -2,7 +2,9 @@
 
 import type { ReadinessReport } from '@monty/domain';
 import { canInWorkspace } from '@monty/domain';
-import type { ActivityDto, ProjectDetailDto, ProjectLifecycle, TaskDto, UpdateProjectInput } from '@monty/validation';
+import type { ActivityDto, DependencyDto, MilestoneDto, ProjectDetailDto, ProjectLifecycle, TaskDto, UpdateProjectInput } from '@monty/validation';
+import { CommentThread } from '@/components/CommentThread';
+import { Milestones } from '@/components/project/Milestones';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
@@ -27,16 +29,19 @@ export default function ProjectPage() {
 }
 
 function ProjectView() {
-  const id = useSearchParams().get('id');
+  const params = useSearchParams();
+  const id = params.get('id');
   const router = useRouter();
   const toast = useToast();
   const [project, setProject] = useState<ProjectDetailDto | null>(null);
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null);
   const [activity, setActivity] = useState<ActivityDto[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneDto[]>([]);
+  const [dependencies, setDependencies] = useState<DependencyDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'list' | 'board'>('list');
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(() => params.get('task'));
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const pending = useRef(0);
   // Latest server version per record, read at send time (not render time) so queued edits never use a stale version.
@@ -51,9 +56,16 @@ function ProjectView() {
 
   const refreshDerived = useCallback(async () => {
     if (!id) return;
-    const [r, a] = await Promise.all([api.projects.readiness(id, localToday()), api.projects.activity(id)]);
+    const [r, a, m, d] = await Promise.all([
+      api.projects.readiness(id, localToday()),
+      api.projects.activity(id),
+      api.milestones.list(id),
+      api.dependencies.list(id),
+    ]);
     setReadiness(r.readiness);
     setActivity(a.activity);
+    setMilestones(m.milestones);
+    setDependencies(d.dependencies);
   }, [id]);
 
   const load = useCallback(async () => {
@@ -230,6 +242,15 @@ function ProjectView() {
             <TaskBoard tasks={tasks} members={project.members} canEdit={canEdit} today={today} onChange={updateTask} onOpen={setOpenTaskId} />
           )}
 
+          <section className="rounded-xl border border-line bg-surface p-4">
+            <CommentThread
+              target={{ projectId: project.id }}
+              members={project.members}
+              canPost={canEdit}
+              canModerate={canInWorkspace(project.role, 'workspace.manage')}
+              label="Project discussion"
+            />
+          </section>
           <ActivityList activity={activity} />
         </div>
 
@@ -239,6 +260,7 @@ function ProjectView() {
               onOpenTask={setOpenTaskId}
               taskTitle={(taskId) => tasks.find((t) => t.id === taskId)?.title ?? 'Open task'}
             /> : <PageLoading />}
+          <Milestones projectId={project.id} milestones={milestones} canEdit={canEditProject} onChanged={() => void refreshDerived()} />
           {canDelete ? (
             <DeleteProject
               onDelete={async () => {
@@ -262,6 +284,24 @@ function ProjectView() {
           onDelete={deleteTask}
           onAddSubtask={(parent, title) => createTask(title, parent.id)}
           onOpen={setOpenTaskId}
+          milestones={milestones}
+          allTasks={tasks}
+          dependencies={dependencies}
+          canModerate={canInWorkspace(project.role, 'workspace.manage')}
+          onAddDependency={async (t, dependsOnTaskId) => {
+            try {
+              await track(() => api.dependencies.add(t.id, dependsOnTaskId));
+            } catch (err) {
+              toast({ tone: 'error', message: errorMessage(err) });
+            }
+          }}
+          onRemoveDependency={async (t, depId) => {
+            try {
+              await track(() => api.dependencies.remove(t.id, depId));
+            } catch (err) {
+              toast({ tone: 'error', message: errorMessage(err) });
+            }
+          }}
         />
       ) : null}
     </div>
@@ -407,7 +447,7 @@ function QuickAdd({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
         onChange={(e) => setTitle(e.target.value)}
       />
       <Button type="submit" variant="primary" busy={busy} disabled={!title.trim()}>
-        Add
+        Add task
       </Button>
     </form>
   );

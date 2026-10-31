@@ -26,7 +26,7 @@ test('capture key screens', async ({ page }) => {
   await page.getByLabel('Project target date').fill('2030-03-31');
   for (const t of ['Write campaign brief', 'Design email template', 'Schedule social posts', 'Landing page copy']) {
     await page.getByLabel('New task title').fill(t);
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('button', { name: 'Add task' }).click();
     await expect(page.getByRole('table').getByRole('button', { name: t, exact: true })).toBeVisible();
   }
   await page.getByLabel('Assignee of Write campaign brief').selectOption({ label: 'Priya' });

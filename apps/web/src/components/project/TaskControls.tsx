@@ -5,7 +5,7 @@ import { Select } from '../ui';
 import { PRIORITY_LABEL, TASK_STATUS_LABEL } from '@/lib/labels';
 
 export type TaskChanges = Partial<
-  Pick<TaskDto, 'title' | 'description' | 'status' | 'priority' | 'assigneeId' | 'startDate' | 'dueDate' | 'estimateMinutes' | 'blockedReason' | 'sortOrder'>
+  Pick<TaskDto, 'title' | 'description' | 'status' | 'priority' | 'assigneeId' | 'startDate' | 'dueDate' | 'estimateMinutes' | 'blockedReason' | 'sortOrder' | 'milestoneId'>
 >;
 
 export function StatusSelect({ task, disabled, onChange }: { task: TaskDto; disabled?: boolean; onChange: (c: TaskChanges) => void }) {

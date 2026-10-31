@@ -29,6 +29,20 @@
       "when": 1793430248147,
       "tag": "0003_row_level_security",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793433782079,
+      "tag": "0004_milestones_comments_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793433783070,
+      "tag": "0005_phase2a_rls",
+      "breakpoints": true
     }
   ]
 }

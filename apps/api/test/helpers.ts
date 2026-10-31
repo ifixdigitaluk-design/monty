@@ -11,6 +11,9 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'notifications',
+  'comments',
+  'milestones',
   'invitations',
   'audit_logs',
   'user_tokens',

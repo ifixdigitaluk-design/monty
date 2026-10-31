@@ -4,6 +4,12 @@
  */
 import type {
   ActivityDto,
+  CommentDto,
+  CreateMilestoneInput,
+  DependencyDto,
+  MilestoneDto,
+  NotificationDto,
+  UpdateMilestoneInput,
   AuditEntryDto,
   CreatedInvitationDto,
   CreateInvitationInput,
@@ -105,6 +111,35 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
+    },
+    milestones: {
+      list: (projectId: string) => request<{ milestones: MilestoneDto[] }>('GET', `/projects/${projectId}/milestones`),
+      create: (projectId: string, input: CreateMilestoneInput) =>
+        request<{ milestone: MilestoneDto }>('POST', `/projects/${projectId}/milestones`, input),
+      update: (id: string, input: UpdateMilestoneInput) => request<{ milestone: MilestoneDto }>('PATCH', `/milestones/${id}`, input),
+      remove: (id: string) => request<void>('DELETE', `/milestones/${id}`),
+    },
+    dependencies: {
+      list: (projectId: string) => request<{ dependencies: DependencyDto[] }>('GET', `/projects/${projectId}/dependencies`),
+      add: (taskId: string, dependsOnTaskId: string) =>
+        request<{ dependency: DependencyDto }>('POST', `/tasks/${taskId}/dependencies`, { dependsOnTaskId }),
+      remove: (taskId: string, id: string) => request<void>('DELETE', `/tasks/${taskId}/dependencies/${id}`),
+    },
+    comments: {
+      list: (target: { projectId: string } | { taskId: string }) =>
+        request<{ comments: CommentDto[] }>('GET', 'taskId' in target ? `/tasks/${target.taskId}/comments` : `/projects/${target.projectId}/comments`),
+      create: (target: { projectId: string } | { taskId: string }, body: string, id?: string) =>
+        request<{ comment: CommentDto }>(
+          'POST',
+          'taskId' in target ? `/tasks/${target.taskId}/comments` : `/projects/${target.projectId}/comments`,
+          { body, id },
+        ),
+      remove: (id: string) => request<void>('DELETE', `/comments/${id}`),
+    },
+    notifications: {
+      list: (unreadOnly = false) =>
+        request<{ notifications: NotificationDto[]; unread: number }>('GET', `/me/notifications${unreadOnly ? '?unread=1' : ''}`),
+      markRead: (ids?: string[]) => request<{ updated: number }>('POST', '/me/notifications/read', ids ? { ids } : {}),
     },
     members: {
       list: (orgId: string) => request<{ members: OrgMemberDto[] }>('GET', `/organisations/${orgId}/members`),

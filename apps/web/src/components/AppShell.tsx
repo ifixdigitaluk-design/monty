@@ -3,7 +3,7 @@
 import { canInOrg } from '@monty/domain';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, ReactNode, Suspense, useState } from 'react';
+import { FormEvent, ReactNode, Suspense, useEffect, useState } from 'react';
 import { api, errorMessage } from '@/lib/api';
 import { RequireSession, useSession } from '@/lib/session';
 import { Button, cx, Field, Input, Modal, PageLoading } from './ui';
@@ -59,6 +59,13 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const activeWorkspace = pathname === '/workspace' ? params.get('id') : null;
   const [orgModal, setOrgModal] = useState(false);
   const [wsModalOrg, setWsModalOrg] = useState<string | null>(null);
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    api.notifications
+      .list(true)
+      .then((r) => setUnread(r.unread))
+      .catch(() => undefined);
+  }, [pathname]);
 
   const navItem = (href: string, label: string, active: boolean) => (
     <Link
@@ -75,7 +82,10 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
     <nav aria-label="Main" className="flex h-full flex-col">
       <div className="flex h-12 items-center px-4 font-semibold tracking-tight">Monty</div>
       <div className="flex-1 space-y-5 overflow-y-auto px-2 pb-4">
-        <div>{navItem('/tasks', 'My Tasks', pathname === '/tasks')}</div>
+        <div>
+          {navItem('/inbox', unread > 0 ? `Inbox (${unread})` : 'Inbox', pathname === '/inbox')}
+          {navItem('/tasks', 'My Tasks', pathname === '/tasks')}
+        </div>
 
         {organisations.map((org) => (
           <div key={org.id}>

@@ -72,7 +72,7 @@ test('sign up → project → tasks → readiness → board → persistence → 
   await expect(check(page, 'owner_assigned')).toHaveAttribute('data-passed', 'true');
 
   await page.getByLabel('New task title').fill('Design homepage');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Add task' }).click();
   await expect(taskButton(page, 'Design homepage')).toBeVisible();
   await expect(check(page, 'tasks_assigned')).toHaveAttribute('data-passed', 'false');
 
@@ -156,7 +156,7 @@ test('rapid successive edits to the same record are all saved (no false conflict
   await page.getByLabel('Project target date').fill('2030-06-30');
   await page.getByLabel('Project start date').fill('2030-01-01');
   await page.getByLabel('New task title').fill('Task one');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Add task' }).click();
   await expect(taskButton(page, 'Task one')).toBeVisible();
   await page.getByLabel('Assignee of Task one').selectOption({ label: 'Quick' });
   await page.getByLabel('Priority of Task one').selectOption('HIGH');

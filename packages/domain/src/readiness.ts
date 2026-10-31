@@ -27,7 +27,8 @@ export type ReadinessRuleId =
   | 'no_open_blockers'
   | 'tasks_scheduled'
   | 'tasks_within_target'
-  | 'target_date_not_passed';
+  | 'target_date_not_passed'
+  | 'dependencies_ordered';
 
 export type RuleSeverity = 'required' | 'recommended';
 
@@ -45,6 +46,8 @@ export interface ReadinessTaskInput {
   assigneeId: string | null;
   dueDate: IsoDate | null;
   blockedReason: string | null;
+  /** Ids of tasks this task waits for. */
+  dependsOn?: readonly string[];
 }
 
 export interface ReadinessConfig {
@@ -72,6 +75,8 @@ export interface ProjectHealth {
   overdueTasks: number;
   blockedTasks: number;
   unassignedOpenTasks: number;
+  /** Open tasks still waiting for an unfinished dependency. */
+  waitingTasks: number;
   percentComplete: number;
 }
 
@@ -217,6 +222,27 @@ export const READINESS_RULES: readonly RuleDefinition[] = [
       };
     },
   },
+  {
+    id: 'dependencies_ordered',
+    title: 'Dependencies are scheduled in order',
+    defaultSeverity: 'recommended',
+    evaluate: ({ openTasks, activeTasks }) => {
+      const byId = new Map(activeTasks.map((t) => [t.id, t]));
+      const bad = openTasks.filter((t) =>
+        (t.dependsOn ?? []).some((d) => {
+          const dep = byId.get(d);
+          return dep && isOpenStatus(dep.status) && dep.dueDate && t.dueDate && dep.dueDate > t.dueDate;
+        }),
+      );
+      return bad.length === 0
+        ? { passed: true, reason: 'No task is due before the work it depends on.' }
+        : {
+            passed: false,
+            reason: `${plural(bad.length, 'task')} ${bad.length === 1 ? 'is' : 'are'} due before ${bad.length === 1 ? 'a task it depends' : 'tasks they depend'} on.`,
+            affectedTaskIds: bad.map((t) => t.id),
+          };
+    },
+  },
 ];
 
 export function evaluateReadiness(
@@ -254,6 +280,12 @@ export function evaluateReadiness(
     overdueTasks: overdue.length,
     blockedTasks: blocked.length,
     unassignedOpenTasks: openTasks.filter((t) => !t.assigneeId).length,
+    waitingTasks: openTasks.filter((t) =>
+      (t.dependsOn ?? []).some((d) => {
+        const dep = activeTasks.find((x) => x.id === d);
+        return dep !== undefined && isOpenStatus(dep.status);
+      }),
+    ).length,
     percentComplete: activeTasks.length === 0 ? 0 : Math.round((doneTasks / activeTasks.length) * 100),
   };
 

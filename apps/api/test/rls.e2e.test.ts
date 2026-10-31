@@ -54,12 +54,15 @@ describe('row-level security for the runtime role', () => {
       `select (select pg_get_userbyid(relowner) = current_user from pg_class where relname = 'projects') as owner,
               (select rolbypassrls from pg_roles where rolname = current_user) as bypass`)).rows;
     expect(role).toEqual({ owner: false, bypass: false });
-    const tables = await query<{ relname: string }>(
-      `select relname from pg_class where relrowsecurity and relkind = 'r' order by relname`,
+    // Guard for future migrations: every table carrying tenant data must have RLS enabled.
+    // Membership tables are the exception by design (they are the source of truth for the policies).
+    const unprotected = await query<{ table_name: string }>(
+      `select c.table_name from information_schema.columns c
+         join pg_class p on p.relname = c.table_name and p.relkind = 'r'
+        where c.table_schema = 'public' and c.column_name in ('organisation_id', 'workspace_id') and not p.relrowsecurity
+        group by c.table_name order by c.table_name`,
     );
-    expect(tables.map((t) => t.relname)).toEqual([
-      'activity_events', 'audit_logs', 'invitations', 'outbox_events', 'projects', 'task_dependencies', 'tasks', 'workspaces',
-    ]);
+    expect(unprotected.map((t) => t.table_name)).toEqual(['organisation_memberships', 'workspace_memberships']);
   });
 
   it('without a user context nothing tenant-scoped is visible', async () => {
