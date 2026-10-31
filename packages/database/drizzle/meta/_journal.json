@@ -64,6 +64,13 @@
       "when": 1793434667385,
       "tag": "0008_documents_rls_search",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793435137996,
+      "tag": "0009_outbox_realtime",
+      "breakpoints": true
     }
   ]
 }

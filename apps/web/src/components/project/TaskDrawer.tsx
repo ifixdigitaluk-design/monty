@@ -56,11 +56,13 @@ export function TaskDrawer({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Keep local drafts in sync when the server version changes (save, conflict reload).
+  // …but never overwrite the field the user is typing in (e.g. when a teammate's live change arrives).
   useEffect(() => {
-    setTitle(task.title);
-    setDescription(task.description);
-    setBlocked(task.blockedReason ?? '');
-    setEstimate(task.estimateMinutes?.toString() ?? '');
+    const focused = typeof document !== 'undefined' ? document.activeElement?.id : undefined;
+    if (focused !== 'task-title') setTitle(task.title);
+    if (focused !== 'task-description') setDescription(task.description);
+    if (focused !== 'task-blocked') setBlocked(task.blockedReason ?? '');
+    if (focused !== 'task-estimate') setEstimate(task.estimateMinutes?.toString() ?? '');
   }, [task.id, task.version, task.title, task.description, task.blockedReason, task.estimateMinutes]);
 
   useEffect(() => {

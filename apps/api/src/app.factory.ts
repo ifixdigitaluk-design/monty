@@ -22,6 +22,7 @@ export async function createApp(overrides: Partial<AppConfig> = {}): Promise<INe
   app.disable('x-powered-by');
   app.use(requestLogging(logger));
   app.use(helmet());
+  // Server-Sent Events must not be compressed or buffered by proxies; nothing in the stack compresses today.
   app.useBodyParser('json', { limit: '1mb' });
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');

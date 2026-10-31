@@ -17,6 +17,8 @@ import { Button, cx, EmptyState, ErrorBanner, Input, PageLoading, Select, Spinne
 import { api, ApiError, errorMessage, localToday } from '@/lib/api';
 import { LIFECYCLE_LABEL } from '@/lib/labels';
 import { useSerialWrites } from '@/lib/serial-writes';
+import { useLiveEvents } from '@/lib/live';
+import { useSession } from '@/lib/session';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -87,6 +89,35 @@ function ProjectView() {
     setProject(null);
     void load();
   }, [load]);
+
+  // Live updates from teammates: refetch through the normal API (debounced), never trust stream payloads.
+  const { user } = useSession();
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchLive = useCallback(() => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(async () => {
+      if (!id) return;
+      try {
+        const [p, t] = await Promise.all([api.projects.get(id), api.tasks.list(id)]);
+        for (const x of t.tasks) versions.current.set(x.id, Math.max(versions.current.get(x.id) ?? 0, x.version));
+        versions.current.set(p.project.id, Math.max(versions.current.get(p.project.id) ?? 0, p.project.version));
+        setProject(p.project);
+        setTasks(t.tasks);
+        await refreshDerived();
+      } catch {
+        /* the next event or a manual reload will recover */
+      }
+    }, 300);
+  }, [id, refreshDerived]);
+  const live = useLiveEvents(project?.workspaceId ?? null, id, {
+    onChange: (e) => {
+      if (e.projectId !== id || e.actorId === user.id) return; // own changes are already applied
+      const known = versions.current.get(e.entityId);
+      if (e.version !== null && known !== undefined && e.version <= known && !e.topic.endsWith('.deleted')) return;
+      refetchLive();
+    },
+    onReset: refetchLive,
+  });
 
   /** Wraps every write: "Saved" is shown only after the server has committed. */
   const track = useCallback(
@@ -213,6 +244,16 @@ function ProjectView() {
         / Project
       </nav>
 
+      <div className="mb-1 flex items-center justify-end gap-2 text-[12px] text-muted" aria-live="polite">
+        {live.viewers.filter((v) => v.userId !== user.id).length > 0 ? (
+          <span data-presence>
+            Also here: {live.viewers.filter((v) => v.userId !== user.id).map((v) => v.name).join(', ')}
+          </span>
+        ) : null}
+        <span data-live={live.status} className={live.status === 'live' ? 'text-success' : live.status === 'revoked' ? 'text-danger' : ''}>
+          {live.status === 'live' ? '● Live' : live.status === 'revoked' ? 'Access changed — reload' : '○ Reconnecting…'}
+        </span>
+      </div>
       <ProjectHeader project={project} canEdit={canEditProject} saveState={saveState} onChange={updateProject} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">

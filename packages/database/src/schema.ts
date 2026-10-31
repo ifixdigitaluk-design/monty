@@ -293,6 +293,8 @@ export const outboxEvents = pgTable(
       .notNull()
       .references(() => organisations.id, { onDelete: 'cascade' }),
     workspaceId: uuid('workspace_id'),
+    projectId: uuid('project_id'),
+    actorId: uuid('actor_id'),
     topic: text('topic').notNull(),
     entityId: uuid('entity_id').notNull(),
     entityVersion: integer('entity_version'),
@@ -300,7 +302,7 @@ export const outboxEvents = pgTable(
     createdAt: createdAt(),
     publishedAt: ts('published_at'),
   },
-  (t) => [index('outbox_pending_idx').on(t.publishedAt, t.createdAt)],
+  (t) => [index('outbox_pending_idx').on(t.publishedAt, t.createdAt), index('outbox_workspace_idx').on(t.workspaceId, t.createdAt)],
 );
 
 export const invitations = pgTable(
