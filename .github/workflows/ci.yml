@@ -20,9 +20,11 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U monty" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      MIGRATION_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
       TEST_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      TEST_APP_DATABASE_URL: postgresql://monty_app:monty_app_dev@localhost:5432/monty_test
       E2E_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_e2e
+      E2E_APP_DATABASE_URL: postgresql://monty_app:monty_app_dev@localhost:5432/monty_e2e
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v4
@@ -32,14 +34,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Create runtime role and e2e database (before migrations, so grants apply)
+        env:
+          PGPASSWORD: monty_dev
+        run: |
+          psql -h localhost -U monty -d monty_test -c "CREATE ROLE monty_app LOGIN PASSWORD 'monty_app_dev' NOSUPERUSER NOBYPASSRLS"
+          psql -h localhost -U monty -d monty_test -c 'CREATE DATABASE monty_e2e'
+          for db in monty_test monty_e2e; do psql -h localhost -U monty -d $db -c 'GRANT CONNECT ON DATABASE '$db' TO monty_app; GRANT USAGE ON SCHEMA public TO monty_app'; done
       - run: pnpm audit --prod
       - name: Build (web build points its /api proxy at the e2e API port)
         run: API_INTERNAL_URL=http://localhost:4100 pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-      - name: Create e2e database
-        run: PGPASSWORD=monty_dev psql -h localhost -U monty -d monty_test -c 'CREATE DATABASE monty_e2e'
       - run: pnpm --filter @monty/e2e exec playwright install --with-deps chromium
       - run: pnpm e2e
       - uses: actions/upload-artifact@v4

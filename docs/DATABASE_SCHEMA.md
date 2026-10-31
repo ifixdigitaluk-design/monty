@@ -26,6 +26,7 @@ User ─┬─< Session
 | `ActivityEvent` | Append-only history | indexed by (`projectId`,`createdAt`) |
 | `OutboxEvent` | Transactional outbox | `publishedAt` null = pending; index on pending |
 | `Invitation` (1b) | Pending org invitations | `tokenHash` unique (raw token never stored); partial unique index = one open invite per (org, email); composite FK keeps the optional workspace in the same org; 7-day expiry |
+| `UserToken` (1b) | Password-reset and email-verification tokens | `tokenHash` unique; purpose enum; bound to the email it was sent to; single use |
 | `AuditLog` (1b) | Security/admin events | `organisationId` null for account-level events (login, logout); indexed by org and actor |
 
 ## 3. Rules
@@ -45,8 +46,11 @@ User ─┬─< Session
 | 4 | `AiConversation`, `AiProposal`, `AiAction`, `ReadinessRuleConfig` |
 | 5 | `AutomationRule`, `AutomationExecution`, `Integration`, `IntegrationToken` (encrypted), `Plan`, `Subscription`, `Entitlement`, `UsageCounter` |
 
-## 5. Migrations
+## 5. Row-level security
+See ADR-009 and `drizzle/0003_row_level_security.sql`. RLS is enabled on workspaces, projects and tasks (per workspace), and on activity_events, outbox_events, invitations, task_dependencies and audit_logs (per organisation).
+
+## 6. Migrations
 `pnpm db:generate` (drizzle-kit) creates SQL from schema changes; the SQL is committed and reviewed; `pnpm db:migrate` applies it. Forward-only in production. Destructive changes use expand → migrate data → contract across releases.
 
-## 6. Backup & restore
+## 7. Backup & restore
 Managed Postgres with PITR (target RPO ≤ 15 min). Restore drill scripted and run in Phase 6 before launch.

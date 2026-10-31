@@ -23,7 +23,7 @@ async function latestLink(to: string, kind: string, path: string): Promise<strin
 async function register(page: Page, email: string) {
   await page.goto('/register');
   await page.getByLabel('Name').fill('Rosa');
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -49,15 +49,16 @@ test('forgot password → email link → new password → old sessions signed ou
   // A second device stays signed in until the reset.
   const other = await (await browser.newContext()).newPage();
   await other.goto('/login');
-  await other.getByLabel('Email').fill(email);
+  await other.getByLabel('Email', { exact: true }).fill(email);
   await other.getByLabel('Password').fill('correct-horse-battery');
   await other.getByRole('button', { name: 'Sign in' }).click();
   await expect(other.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Sign out' }).click();
-  await page.getByLabel('Email').fill(email);
+  await expect(page.getByRole('heading', { name: 'Sign in to Monty' })).toBeVisible();
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByRole('link', { name: 'Forgot password?' }).click();
-  await expect(page.getByLabel('Email')).toHaveValue(email);
+  await expect(page.getByLabel('Email', { exact: true })).toHaveValue(email);
   await page.getByRole('button', { name: 'Send reset link' }).click();
   await expect(page.getByRole('status')).toContainText('If an account exists');
 
@@ -71,7 +72,7 @@ test('forgot password → email link → new password → old sessions signed ou
   await expect(other.getByRole('heading', { name: 'Sign in to Monty' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Sign in' }).click();
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('a-brand-new-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -81,7 +82,7 @@ test('forgot password → email link → new password → old sessions signed ou
 
 test('unknown emails get the same reset response', async ({ page }) => {
   await page.goto('/forgot-password');
-  await page.getByLabel('Email').fill(`ghost-${unique()}@example.com`);
+  await page.getByLabel('Email', { exact: true }).fill(`ghost-${unique()}@example.com`);
   await page.getByRole('button', { name: 'Send reset link' }).click();
   await expect(page.getByRole('status')).toContainText('If an account exists');
 });

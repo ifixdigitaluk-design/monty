@@ -28,7 +28,7 @@ const TABLES = [
 ];
 
 export async function resetDb() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   try {
     await pool.query(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} CASCADE`);
   } finally {
@@ -37,7 +37,7 @@ export async function resetDb() {
 }
 
 export async function query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   try {
     return (await pool.query(sql, params)).rows as T[];
   } finally {

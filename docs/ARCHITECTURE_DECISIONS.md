@@ -29,10 +29,18 @@ Readiness and computed status come from pure rules over project data (`packages/
 ## ADR-008 Conservative major versions [Accepted]
 TypeScript 7 (native compiler) and NestJS 12 are recent majors. We pin TS 5.9 and Nest 11 to keep decorator metadata, ecosystem tooling (typescript-eslint, SWC) and documented behaviour stable. Revisit each quarter.
 
-## ADR-009 Tenant isolation layers [Accepted, RLS pending]
+## ADR-009 Tenant isolation layers [Accepted, RLS implemented in session 3]
 1. API authorisation via `packages/domain` permission function on every request.
 2. Tenant columns + composite foreign keys.
-3. Postgres row-level security keyed on `app.current_org_ids` session setting — planned for Phase 1b; implemented with a per-request transaction that runs `set_config(...)` before queries (straightforward with Drizzle, ADR-013). Not yet implemented.
+3. Postgres row-level security (migration `0003_row_level_security.sql`):
+   - The API connects as `monty_app` (not owner, NOBYPASSRLS). Migrations use the owner role.
+   - Each authenticated request runs in one transaction with `app.user_id` set. Policies call SECURITY DEFINER helpers (`app_user_org_ids`, `app_user_admin_org_ids`, `app_user_member_workspace_ids`) that mirror `effectiveWorkspaceRole`.
+   - Workspaces, projects and tasks are filtered per workspace. Activity, outbox, invitations, dependencies and audit are filtered per organisation. Account-level audit rows are visible only to their own user.
+   - Membership tables are not row-filtered: they are the source of truth.
+   - **System context**: `app.system = on` is used only for invitation preview and accept by secret token (`DbService.runAsSystem`).
+   - **Residual risk**: SQL injection could set the GUC. Mitigation: all queries are parameterised; a stricter future option is a separate BYPASSRLS system role.
+   - The API refuses to start when `REQUIRE_RLS` is on (always in production) and RLS wouldn't apply: superuser, BYPASSRLS, or table owner.
+   - Consequence: a request is a transaction. A thrown error rolls back all its writes.
 
 ## ADR-010 Desktop with Tauri 2 [Proposed — needs proof]
 Small binaries, Rust core for keychain, notifications, deep links, updater with signature verification. Risk: WebView differences (WebKit on macOS/Linux vs WebView2 on Windows) for the editor. Proof of compatibility in Phase 3 before committing: build shell, load static export, run editor + WebSocket smoke tests on all three OSes. Fallback: Electron.
@@ -47,3 +55,8 @@ Small binaries, Rust core for keychain, notifications, deep links, updater with 
 Context: the brief recommended Prisma. In Phase 1, Prisma 6 and 7 both needed native engine binaries downloaded from `binaries.prisma.sh` at install/migrate time, and the build sandbox blocks that host. That is an environment issue, but it exposed real costs: binary engines complicate locked-down CI, air-gapped/enterprise installs and desktop packaging, and Prisma makes Postgres RLS (ADR-009) awkward because the session setting must be applied inside the same transaction as every query.
 Decision: Drizzle ORM 0.45 + node-postgres. Pure TypeScript, no engine binaries; schema in TS; drizzle-kit generates plain SQL migrations that we commit and review; explicit transactions make per-request `set_config` for RLS simple.
 Consequences: queries are a little more explicit (joins rather than nested includes). Composite FKs, enums and composite indexes are expressed in the schema. Reversible: the SQL schema is ORM-neutral, so Prisma could introspect it later if the founder prefers.
+
+## ADR-014 Email over SMTP behind a transport port [Accepted]
+Context: password reset, email verification and invitations need email; the provider wasn't chosen yet.
+Decision: a `MailTransport` interface with an SMTP implementation (nodemailer ≥10.1.4 for security fixes, STARTTLS required) and an in-memory log transport for dev/test. Postmark, Resend, Amazon SES and Mailgun all accept SMTP, so choosing a provider is configuration only (`SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`). Production refuses to start with the log transport.
+Consequences: sending happens after commit and isn't retried yet. A failed invitation email is reported in the UI and the link can be shared manually. Reset emails are fire-and-forget so timing doesn't reveal whether an account exists. A queued outbox with retries is planned alongside the Phase 3 worker. Provider-specific features (webhooks for bounces) are a later addition.

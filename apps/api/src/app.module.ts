@@ -1,5 +1,6 @@
 import { Controller, DynamicModule, Get, Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestContextInterceptor } from './db/request-context.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
@@ -66,6 +67,8 @@ export class AppModule {
         { provide: APP_GUARD, useClass: ThrottlerGuard },
         { provide: APP_GUARD, useClass: CsrfGuard },
         { provide: APP_GUARD, useClass: SessionGuard },
+        // After guards: authenticated requests run in one RLS-scoped transaction.
+        { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
       ],
       exports: [CONFIG],
     };

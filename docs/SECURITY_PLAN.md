@@ -7,14 +7,22 @@ No compliance or certification is claimed. Items marked ✅ are implemented in t
 - ✅ Opaque 256-bit session tokens; only SHA-256 hash stored; 30-day sliding expiry; revocation; session list.
 - ✅ Cookie: HttpOnly, SameSite=Lax, Secure in production, path `/`.
 - ✅ Constant-time-ish login: same error for unknown email and wrong password; dummy hash when user missing.
-- Planned: MFA (TOTP + WebAuthn) Phase 2; email verification + password reset Phase 2; enterprise SSO (SAML/OIDC) + SCIM Phase 5+.
+- ✅ Password reset:
+  - The response is identical whether or not the account exists, and the email is sent asynchronously so response time doesn't reveal it either.
+  - Links last 1 hour, work once, are stored hashed, and only the newest one works.
+  - A link is bound to the account email at the time it was sent.
+  - A successful reset revokes every session and is audited.
+- ✅ Email verification: sent at sign-up, can be resent, valid for 7 days, works once. A successful password reset also counts as verification.
+- ✅ Email templates HTML-escape every user-controlled value. Logs record the recipient domain and email type only, never links.
+- Known trade-off: sign-up returns `EMAIL_TAKEN`, which reveals that an account exists. Revisit with CAPTCHA or rate limits before public launch.
+- Planned: MFA (TOTP + WebAuthn) Phase 2; enterprise SSO (SAML/OIDC) + SCIM Phase 5+.
 
 ## 2. Authorisation & tenant isolation
 - ✅ Central permission function in `packages/domain` (role × action matrix), called by every service method.
 - ✅ 404 for unreadable resources (no existence leak).
 - ✅ Tenant columns + composite FKs.
 - ✅ Automated cross-tenant tests (user B cannot read/modify user A's workspace/project/task).
-- Planned: Postgres RLS as defence in depth (ADR-009).
+- ✅ Postgres row-level security as defence in depth (ADR-009). The API runs as a restricted role and refuses to start if RLS wouldn't apply. Tests run as that role and include SQL-level isolation tests and a simulated "missing permission check" test.
 
 ## 3. Web protections
 - ✅ CSRF: SameSite=Lax + required `X-Monty-Client` header on mutations + Origin allowlist.

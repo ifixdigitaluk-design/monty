@@ -1,8 +1,9 @@
 import { runMigrations } from './index';
 
-const url = process.env.DATABASE_URL;
+// Migrations need the schema owner; the API itself connects as the restricted monty_app role.
+const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!url) {
-  console.error('DATABASE_URL is not set');
+  console.error('MIGRATION_DATABASE_URL (or DATABASE_URL) is not set');
   process.exit(1);
 }
 

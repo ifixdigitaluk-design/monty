@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   SMTP_SECURE: z.enum(['true', 'false']).default('false'),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
+  REQUIRE_RLS: z.enum(['true', 'false']).optional(),
 });
 
 export interface AppConfig {
@@ -34,6 +36,7 @@ export interface AppConfig {
   cookieName: string;
   sessionTtlDays: number;
   appUrl: string;
+  requireRls: boolean;
   mail: {
     transport: 'log' | 'smtp';
     from: string;
@@ -67,6 +70,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cookieName: isProduction ? '__Host-monty_session' : 'monty_session',
     sessionTtlDays: 30,
     appUrl: e.APP_URL.replace(/\/$/, ''),
+    requireRls: e.REQUIRE_RLS ? e.REQUIRE_RLS === 'true' : isProduction,
     mail: {
       transport: e.MAIL_TRANSPORT,
       from: e.MAIL_FROM,

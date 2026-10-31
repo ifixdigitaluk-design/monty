@@ -17,7 +17,7 @@ async function register(page: Page, name: string) {
   const email = `${name.toLowerCase()}-${unique()}@example.com`;
   await page.goto('/register');
   await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -28,7 +28,7 @@ async function login(browser: Browser, email: string) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto('/login');
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'My Tasks' })).toBeVisible();
@@ -194,7 +194,7 @@ test('unauthenticated visitors are sent to sign in and returned afterwards', asy
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.goto('/settings/sessions');
   await expect(page).toHaveURL(/\/login\?next=%2Fsettings%2Fsessions/);
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Sessions & security' })).toBeVisible();

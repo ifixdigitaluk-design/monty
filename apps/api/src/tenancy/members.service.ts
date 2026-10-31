@@ -168,13 +168,7 @@ export class MembersService {
           ownerCount: rows.filter((r) => r.role === 'OWNER').length,
         }),
       );
-      const orgWorkspaceIds = tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.organisationId, organisationId));
-      await tx
-        .delete(workspaceMemberships)
-        .where(and(eq(workspaceMemberships.userId, targetUserId), inArray(workspaceMemberships.workspaceId, orgWorkspaceIds)));
-      await tx
-        .delete(organisationMemberships)
-        .where(and(eq(organisationMemberships.organisationId, organisationId), eq(organisationMemberships.userId, targetUserId)));
+      // Audit first: once someone leaves, row-level security no longer lets them write rows for this organisation.
       await this.audit.record(
         {
           organisationId,
@@ -187,6 +181,13 @@ export class MembersService {
         },
         tx,
       );
+      const orgWorkspaceIds = tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.organisationId, organisationId));
+      await tx
+        .delete(workspaceMemberships)
+        .where(and(eq(workspaceMemberships.userId, targetUserId), inArray(workspaceMemberships.workspaceId, orgWorkspaceIds)));
+      await tx
+        .delete(organisationMemberships)
+        .where(and(eq(organisationMemberships.organisationId, organisationId), eq(organisationMemberships.userId, targetUserId)));
     });
   }
 
@@ -399,14 +400,8 @@ export class MembersService {
 
   /** Public preview so the invitee can see what they are joining before signing in. */
   async previewInvitation(token: string): Promise<InvitationPreviewDto> {
-    const [row] = await this.dbs.db
-      .select({ i: invitations, orgName: organisations.name, orgDeleted: organisations.deletedAt, inviterName: users.name, workspaceName: workspaces.name })
-      .from(invitations)
-      .innerJoin(organisations, eq(organisations.id, invitations.organisationId))
-      .innerJoin(users, eq(users.id, invitations.invitedById))
-      .leftJoin(workspaces, eq(workspaces.id, invitations.workspaceId))
-      .where(eq(invitations.tokenHash, hashToken(token)))
-      .limit(1);
+    // System context: the caller is not (yet) a member, and possession of the secret token is the authorisation.
+    const [row] = await this.dbs.runAsSystem(() => this.previewQuery(token));
     if (!row || row.orgDeleted) throw notFound('Invitation');
     return {
       organisationName: row.orgName,
@@ -418,8 +413,20 @@ export class MembersService {
     };
   }
 
+  private previewQuery(token: string) {
+    return this.dbs.db
+      .select({ i: invitations, orgName: organisations.name, orgDeleted: organisations.deletedAt, inviterName: users.name, workspaceName: workspaces.name })
+      .from(invitations)
+      .innerJoin(organisations, eq(organisations.id, invitations.organisationId))
+      .innerJoin(users, eq(users.id, invitations.invitedById))
+      .leftJoin(workspaces, eq(workspaces.id, invitations.workspaceId))
+      .where(eq(invitations.tokenHash, hashToken(token)))
+      .limit(1);
+  }
+
   async acceptInvitation(userId: string, token: string, client: ClientInfo): Promise<{ organisationId: string; workspaceId: string | null }> {
-    return this.dbs.db.transaction(async (tx) => {
+    // System context: the invitee cannot see the organisation's rows until this succeeds; the token authorises it.
+    return this.dbs.runAsSystem(() => this.dbs.db.transaction(async (tx) => {
       const [inv] = await tx.select().from(invitations).where(eq(invitations.tokenHash, hashToken(token))).limit(1).for('update');
       if (!inv) throw notFound('Invitation');
       const status = statusOf(inv);
@@ -479,7 +486,7 @@ export class MembersService {
         tx,
       );
       return { organisationId: inv.organisationId, workspaceId };
-    });
+    }));
   }
 
   async auditLog(actorId: string, organisationId: string) {

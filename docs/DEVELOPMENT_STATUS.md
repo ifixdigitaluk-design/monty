@@ -1,6 +1,6 @@
 # Development Status (master record)
 
-Last updated: 31 Oct 2026 · Session 2 · Phase 1b membership work delivered (invitations, member management, audit log).
+Last updated: 31 Oct 2026 · Session 3 · Phase 1b complete except Redis rate limiting (email, password reset, email verification, Postgres RLS).
 
 ## Status definitions
 - **Implemented**: code exists and builds.
@@ -34,9 +34,13 @@ Implementation status and verification status are recorded separately below.
 | B-01 | Invitations: create, preview, accept, revoke; email-bound, single-use, expiring | Implemented | Verified | 7 API tests; Playwright invite → sign-up → accept, and wrong-account test |
 | B-02 | Member management: list, role change, remove, leave; last-owner protection; workspace access grant/change/remove | Implemented | Verified | 8 API tests incl. concurrent demotion race; Playwright role change, access removal and member removal |
 | B-04 | Audit log (security + admin events) with org-admin view | Implemented | Verified | 2 API tests; Playwright audit tab |
+| B-08 | Email via SMTP (provider-neutral), dev mailbox, HTML-escaped templates, invitation emails | Implemented | Verified (log transport) | API tests; Playwright reads real emails from the dev mailbox. **SMTP against a real provider not yet verified** (no credentials) |
+| B-05 | Email verification (sign-up, resend, banner) | Implemented | Verified | 4 API tests; Playwright |
+| B-06 | Password reset (enumeration-safe, single-use, revokes sessions) | Implemented | Verified | 5 API tests; Playwright incl. second-device sign-out |
+| B-03 | Postgres row-level security; API runs as restricted role; refuses to start if RLS is ineffective | Implemented | Verified | 9 RLS tests (SQL-level and simulated missing check); every API and Playwright test now runs as the restricted role |
 | B-02 UI | Members & settings page (members, invitations, audit tabs), workspace "Manage access", /invite page | Implemented | Verified | Playwright; screenshots reviewed |
 
-Not started: RLS (B-03), email provider + invitation emails (B-08), email verification (B-05), password reset (B-06), Redis rate limiting (B-07), milestones, dependencies API, comments, attachments, documents and editor, search, notifications, realtime, desktop, AI, automation, billing, integrations, analytics.
+Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, milestones, dependencies API, comments, attachments, documents and editor, search, notifications, realtime, desktop, AI, automation, billing, integrations, analytics.
 
 ## Session 1 report
 
@@ -108,3 +112,42 @@ Not started: RLS (B-03), email provider + invitation emails (B-08), email verifi
     - B-03 RLS.
     - Push to GitHub and run CI.
     - Then Phase 2.
+
+## Session 3 report (Phase 1b completion)
+
+1. **Inspected**: GitHub is still not connected to this session. Postgres had stopped again while idle (restarted; data intact).
+2. **Developed**:
+   - Email over SMTP, so any provider works by configuration. There's a development mailbox for testing.
+   - Password reset.
+   - Email verification.
+   - Invitation emails.
+   - Postgres row-level security with a restricted runtime role, plus a startup guard that refuses to run if RLS wouldn't apply.
+3. **Files changed**:
+   - New: `apps/api/src/mail/*`, `apps/api/src/auth/{account-recovery.service,crypto}.ts`, `apps/api/src/db/request-context.interceptor.ts`, `packages/database/drizzle/0002_user_tokens.sql`, `packages/database/drizzle/0003_row_level_security.sql`, `infra/db/create-app-role.sql`, the web pages `forgot-password`, `reset-password` and `verify-email`, and the tests `account-recovery.e2e`, `rls.e2e` and `account-recovery.spec`.
+   - Updated: DbService (request-scoped transactions), config, the CI workflow, `.env.example`, docs.
+4. **Functional**: B-03, B-05, B-06 and B-08 as listed in the feature table.
+5. **Tests executed** (31 Oct 2026):
+   - `pnpm build`, `pnpm typecheck` and `pnpm lint` → exit 0
+   - `pnpm test` → domain 33/33, validation 7/7, API 80/80 (the API now runs as the restricted `monty_app` role)
+   - `pnpm e2e` → 9/9, three consecutive runs
+   - `pnpm audit --prod` → clean
+6. **Passed**: all of the above.
+7. **Failed during the session and fixed**:
+   - The first RLS policy design broke `INSERT … RETURNING`, because the policy looked up the row being inserted within the same statement. Redesigned the policies.
+   - "Leave organisation" failed under RLS because the audit row was written after the membership was removed. The audit row is now written first.
+   - nodemailer 9.x had 12 advisories. Upgraded to 10.1.7.
+   - Two test races (sign-out timing, an ambiguous label) fixed.
+8. **Incomplete**:
+   - Real SMTP delivery hasn't been tested end to end, because there are no provider credentials.
+   - No email retry queue.
+   - Redis rate limiting.
+   - CI hasn't run.
+9. **Risks**:
+   - **Request-wide transactions**: each authenticated request holds one database connection for its whole duration, so pool sizing matters under load (Phase 6 load test).
+   - **RLS escape hatch**: the system context is a session setting (ADR-009 residual risk).
+   - **Sign-up enumeration**: sign-up still reveals whether an email is registered.
+   - **Production sending setup**: production needs SPF, DKIM and DMARC configured for the sending domain.
+10. **Next**:
+    - Connect GitHub and run CI.
+    - Choose an email provider and add its credentials, then send one real test email.
+    - Then Phase 2: milestones, dependencies, comments, documents.

@@ -20,6 +20,11 @@ Base path `/api/v1`. JSON. Contracts are the Zod schemas in `packages/validation
 | POST | `/auth/logout` | Revokes current session |
 | GET | `/auth/me` | Current user |
 | GET | `/auth/sessions` | Active sessions for current user |
+| POST | `/auth/password-reset` | `{email}` → always 202 with the same body; emails a 1-hour link if the account exists |
+| POST | `/auth/password-reset/confirm` | `{token, password}` → 204; signs out every session. 400 if the link is invalid or expired |
+| POST | `/auth/verify-email` | `{token}` → 204 |
+| POST | `/auth/verify-email/resend` | signed in → 202 `{sent}` |
+| GET | `/dev/mailbox?to=` | **development only** (log transport, non-production): captured emails |
 | DELETE | `/auth/sessions/:id` | Revoke one of own sessions |
 | GET | `/organisations` | Orgs I belong to, with role and workspaces I can access |
 | POST | `/organisations` | `{name}` → TEAM org, caller OWNER, default workspace |

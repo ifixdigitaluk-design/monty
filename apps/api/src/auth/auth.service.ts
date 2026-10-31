@@ -52,6 +52,8 @@ export class AuthService implements OnModuleInit {
     try {
       user = await this.dbs.db.transaction(async (tx) => {
         const [u] = await tx.insert(users).values({ email: input.email, name: input.name, passwordHash }).returning();
+        // Row-level security: act as the new user for the rest of sign-up.
+        await this.dbs.setCurrentUser(tx, u!.id);
         const [org] = await tx
           .insert(organisations)
           .values({ name: `${input.name}'s space`, slug: `personal-${randomSuffix(6)}`, kind: 'PERSONAL', personalOwnerId: u!.id })

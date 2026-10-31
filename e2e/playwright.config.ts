@@ -2,7 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 import path from 'node:path';
 
 const root = path.resolve(__dirname, '..');
-const databaseUrl = process.env.E2E_DATABASE_URL ?? 'postgresql://monty:monty_dev@localhost:5432/monty_e2e';
+// Owner for migrations; the API runs as the restricted monty_app role so row-level security is exercised end to end.
+const ownerUrl = process.env.E2E_DATABASE_URL ?? 'postgresql://monty:monty_dev@localhost:5432/monty_e2e';
+const appUrl = process.env.E2E_APP_DATABASE_URL ?? 'postgresql://monty_app:monty_app_dev@localhost:5432/monty_e2e';
 
 /**
  * Runs the real stack: built API (port 4100) + built Next.js app (port 3100) + Postgres.
@@ -29,7 +31,9 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       env: {
-        DATABASE_URL: databaseUrl,
+        MIGRATION_DATABASE_URL: ownerUrl,
+        DATABASE_URL: appUrl,
+        REQUIRE_RLS: 'true',
         API_PORT: '4100',
         ALLOWED_ORIGINS: 'http://localhost:3100',
         LOG_LEVEL: 'warn',
