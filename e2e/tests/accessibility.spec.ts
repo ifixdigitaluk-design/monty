@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, Page, test } from '@playwright/test';
 import { register } from '../helpers';
 
@@ -69,7 +69,8 @@ test('no axe violations on the 13 main pages (desktop and phone width)', async (
     results[name] = summary(await axe(page));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${name} scrolls sideways`).toBe(true);
   }
-  console.log(JSON.stringify(results, null, 1));
+  await test.info().attach('axe-results.json', { body: JSON.stringify(results, null, 1), contentType: 'application/json' });
+  writeFileSync(test.info().outputPath('axe-results.json'), JSON.stringify(results, null, 1));
   expect(Object.entries(results).filter(([, v]) => v.length)).toEqual([]);
 });
 
