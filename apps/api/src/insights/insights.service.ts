@@ -66,6 +66,21 @@ export class InsightsService {
                '', db.name, null::uuid, w.id, w.name, ts_rank(r.search, q.query) * 0.9, db.id, null::uuid
         from database_rows r join databases db on db.id = r.database_id and db.deleted_at is null join workspaces w on w.id = r.workspace_id, q
         where r.search @@ q.query and r.deleted_at is null and r.workspace_id in (${wsList})
+        union all
+        select 'crm_company', c.id, c.name, ts_headline('simple', coalesce(nullif(c.notes, ''), c.industry, c.name), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(c.search, q.query), null::uuid, null::uuid
+        from crm_companies c join workspaces w on w.id = c.workspace_id, q
+        where c.search @@ q.query and c.deleted_at is null and c.workspace_id in (${wsList})
+        union all
+        select 'crm_contact', c.id, c.name, ts_headline('simple', concat_ws(' · ', nullif(c.job_title, ''), nullif(c.email, ''), nullif(c.notes, '')), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(c.search, q.query), null::uuid, null::uuid
+        from crm_contacts c join workspaces w on w.id = c.workspace_id, q
+        where c.search @@ q.query and c.deleted_at is null and c.workspace_id in (${wsList})
+        union all
+        select 'crm_deal', d.id, d.title, ts_headline('simple', coalesce(nullif(d.notes, ''), d.title), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(d.search, q.query), null::uuid, null::uuid
+        from crm_deals d join workspaces w on w.id = d.workspace_id, q
+        where d.search @@ q.query and d.deleted_at is null and d.workspace_id in (${wsList})
       ) r
       order by rank desc, title asc
       limit ${limit}`);

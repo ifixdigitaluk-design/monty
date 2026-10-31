@@ -56,7 +56,9 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
     onClose();
     setQ('');
     router.push(
-      r.type === 'database_row'
+      r.type === 'crm_company' || r.type === 'crm_contact' || r.type === 'crm_deal'
+        ? `/crm?ws=${r.workspaceId}&${r.type.slice(4)}=${r.id}`
+        : r.type === 'database_row'
         ? `/databases?ws=${r.workspaceId}&id=${r.databaseId}&row=${r.id}`
         : r.type === 'message'
         ? `/chat?ws=${r.workspaceId}&c=${r.channelId}${r.parentId ? `&t=${r.parentId}` : ''}`
@@ -103,7 +105,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
               onClick={() => go(r)}
             >
               <span className="flex items-center gap-2">
-                <span className="rounded bg-surface-2 px-1 text-[11px] uppercase text-muted">{r.type === 'database_row' ? 'row' : r.type}</span>
+                <span className="rounded bg-surface-2 px-1 text-[11px] uppercase text-muted">{r.type === 'database_row' ? 'row' : r.type.replace('crm_', '')}</span>
                 <span className="truncate font-medium">{r.title}</span>
                 <span className="ml-auto shrink-0 text-[12px] text-muted">{r.projectName}</span>
               </span>

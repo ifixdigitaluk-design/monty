@@ -89,6 +89,22 @@ test('no axe violations on the main pages (desktop and phone width)', async ({ p
     await expect(page.getByText('First row').or(page.getByLabel('Name of First row')).first()).toBeVisible();
     results[name] = summary(await axe(page));
   }
+  // CRM: overview, pipeline, a company panel and a quote.
+  const company = (await (await page.request.post(`/api/v1/workspaces/${wsId}/crm/companies`, { headers, data: { name: 'Audit Co' } })).json()).company;
+  await page.request.post(`/api/v1/workspaces/${wsId}/crm/deals`, { headers, data: { title: 'Audit deal', companyId: company.id, value: 1000, stage: 'qualified' } });
+  await page.request.post(`/api/v1/workspaces/${wsId}/crm/activities`, { headers, data: { type: 'task', subject: 'Call back', companyId: company.id, dueAt: new Date(Date.now() + 3600_000).toISOString() } });
+  const quote = (await (await page.request.post(`/api/v1/workspaces/${wsId}/crm/quotes`, { headers, data: { title: 'Audit quote', companyId: company.id, lines: [{ description: 'Work', quantity: 1, unitPrice: 1000, taxRate: 20 }] } })).json()).quote;
+  for (const [name, url, text] of [
+    ['crm-overview', `/crm?ws=${wsId}`, 'Closing soon'],
+    ['crm-pipeline', `/crm?ws=${wsId}&tab=pipeline`, 'Audit deal'],
+    ['crm-company', `/crm?ws=${wsId}&tab=companies&company=${company.id}`, 'Call back'],
+    ['crm-quote', `/crm/quote?ws=${wsId}&id=${quote.id}`, 'Audit quote'],
+    ['crm-quote-print', `/crm/quote/print?id=${quote.id}`, 'Quote Q-0001'],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText(text).first()).toBeVisible();
+    results[name] = summary(await axe(page));
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [name, url] of [['phone-home', '/home'], ['phone-calendar', '/calendar']] as const) {
     await page.goto(url);

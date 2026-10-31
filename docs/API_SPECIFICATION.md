@@ -156,6 +156,12 @@ New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retr
 | POST | `/databases/:id/rows` | `task.update` | idempotent by `id`; values validated per field type (people must be workspace members) |
 | GET/PATCH/DELETE | `/database-rows/:id` | read / `task.update` | PATCH merges only the cells sent (`null` clears); changing `body` needs `expectedVersion` = the row's `bodyVersion` (409 `VERSION_CONFLICT` otherwise) |
 
+| GET | `/workspaces/:id/crm/summary` | read | pipeline per currency (open, weighted, won this month), win rate, counts, my open follow-ups |
+| GET/POST | `/workspaces/:id/crm/companies` · `/contacts` · `/deals` · `/quotes` | read / `task.update` | lists support `?q=` (full text); create is idempotent by `id`; links must be in the same workspace; owners must be members |
+| GET/PATCH/DELETE | `/crm/companies/:id` · `/crm/contacts/:id` · `/crm/deals/:id` · `/crm/quotes/:id` | read / `task.update` | GET company/contact/deal include related records and the activity timeline. Deal stage → won/lost sets `closedAt`. Quote totals are computed by the server from `lines` (minor units); quotes are numbered `Q-0001…` per workspace; accepted quotes can't change lines or currency |
+| GET/POST | `/workspaces/:id/crm/activities[?mine=1&open=1]` | read / `task.update` | types `note, call, meeting, email, task`; must link to a company, contact or deal; `dueAt` makes it a follow-up (assignee notified) |
+| PATCH/DELETE | `/crm/activities/:id` | `task.update` (delete: author or workspace admin) | `{done}` marks a follow-up complete |
+
 Live updates: chat events (`event: chat`) go only to people who can see the channel; database events (`event: database`) go to the workspace. Both are pointers — clients refetch through the endpoints above. Search (`GET /search`) also returns chat messages (`type: message`) and database rows (`type: database_row`, with `databaseId`).
 
 ## Not implemented (planned)

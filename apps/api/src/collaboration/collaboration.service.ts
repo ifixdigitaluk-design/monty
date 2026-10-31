@@ -24,7 +24,7 @@ export interface NotifyInput {
   workspaceId: string;
   projectId: string | null;
   type: 'mention' | 'assigned' | 'comment' | 'automation';
-  entityType: 'task' | 'comment' | 'message';
+  entityType: 'task' | 'comment' | 'message' | 'crm_activity';
   entityId: string;
   data: Record<string, unknown>;
   dedupeKey: string;

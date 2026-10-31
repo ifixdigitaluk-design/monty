@@ -41,6 +41,8 @@ import { FilesController } from './files/files.controller';
 import { FilesService } from './files/files.service';
 import { DatabasesController } from './databases/databases.controller';
 import { DatabasesService } from './databases/databases.service';
+import { CrmController } from './crm/crm.controller';
+import { CrmService } from './crm/crm.service';
 import { MetricsController } from './observability/metrics.controller';
 import { MaintenanceService } from './maintenance/maintenance.service';
 import { EntitlementsService } from './billing/entitlements.service';
@@ -107,6 +109,7 @@ export class AppModule {
         ChatController,
         FilesController,
         DatabasesController,
+        CrmController,
         // Development-only mailbox: never registered in production or with a real mail provider.
         ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
       ],
@@ -130,6 +133,7 @@ export class AppModule {
         ChatService,
         FilesService,
         DatabasesService,
+        CrmService,
         EntitlementsService,
         AccessService,
         OrganisationsService,

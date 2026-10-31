@@ -22,6 +22,10 @@ function describe(n: NotificationDto): string {
   if (n.type === 'automation') {
     return `Automation “${(n.data.ruleName as string) ?? 'rule'}”: ${(n.data.message as string) ?? ''}${n.data.title ? ` — “${n.data.title as string}”` : ''}`;
   }
+  if (n.type === 'assigned' && n.entityType === 'crm_activity') {
+    const due = n.data.dueAt ? new Date(n.data.dueAt as string).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : null;
+    return `${who} gave you a follow-up: “${(n.data.title as string) ?? ''}”${due ? ` (due ${due})` : ''}`;
+  }
   if (n.type === 'assigned') return `${who} assigned you “${task ?? 'a task'}”${project ? ` in ${project}` : ''}`;
   if (n.type === 'mention' && n.entityType === 'message') {
     return `${who} mentioned you in ${(n.data.channelName as string) ?? 'chat'}: “${(n.data.preview as string) ?? ''}”`;
@@ -53,6 +57,10 @@ function Inbox() {
     if (n.entityType === 'message') {
       const d = n.data as { workspaceId?: string; channelId?: string; threadId?: string | null };
       router.push(`/chat?${d.workspaceId ? `ws=${d.workspaceId}&` : ''}c=${d.channelId}${d.threadId ? `&t=${d.threadId}` : ''}`);
+      return;
+    }
+    if (n.entityType === 'crm_activity') {
+      router.push(`/crm?ws=${n.data.workspaceId as string}&tab=followups`);
       return;
     }
     if (n.projectId) router.push(`/project?id=${n.projectId}${taskId ? `&task=${taskId}` : ''}`);

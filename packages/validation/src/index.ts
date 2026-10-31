@@ -3,7 +3,7 @@
  * Request schemas are strict: unknown fields are rejected.
  */
 import { z } from 'zod';
-import { CHOICE_COLORS, FIELD_TYPES, FILTER_OPS, isIsoDate } from '@monty/domain';
+import { ACTIVITY_TYPES, CHOICE_COLORS, DEAL_STAGES, FIELD_TYPES, FILTER_OPS, isIsoDate, QUOTE_STATUSES } from '@monty/domain';
 import type { FieldType, ViewConfig } from '@monty/domain';
 
 export const isoDate = z.string().refine(isIsoDate, { message: 'Expected a date in YYYY-MM-DD format' });
@@ -458,7 +458,7 @@ export const CalendarQuerySchema = z
   .refine((v) => (Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 <= 62, { message: 'Range is limited to 62 days' });
 
 export interface SearchResultDto {
-  type: 'project' | 'task' | 'comment' | 'document' | 'message' | 'database_row';
+  type: 'project' | 'task' | 'comment' | 'document' | 'message' | 'database_row' | 'crm_company' | 'crm_contact' | 'crm_deal';
   id: string;
   title: string;
   snippet: string;
@@ -933,4 +933,138 @@ export interface DatabaseDto {
   fields: DatabaseFieldDto[];
   views: DatabaseViewDto[];
   rows: DatabaseRowDto[];
+}
+
+// ---------- CRM ----------
+const shortText = (max: number) => z.string().trim().max(max);
+const longText = z.string().max(20_000);
+const money = z.int().min(-1_000_000_000_000).max(1_000_000_000_000);
+const currency = z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code, e.g. GBP');
+const optionalUuid = uuid.nullable().optional();
+const webUrl = z.union([z.literal(''), z.string().max(500).regex(/^https?:\/\/\S+$/i, 'Must start with http:// or https://')]);
+
+export const CompanySchema = z.strictObject({
+  id: uuid.optional(),
+  name: name,
+  website: webUrl.optional(),
+  industry: shortText(100).optional(),
+  phone: shortText(50).optional(),
+  address: shortText(500).optional(),
+  notes: longText.optional(),
+  ownerId: optionalUuid,
+});
+export const UpdateCompanySchema = CompanySchema.omit({ id: true }).partial();
+export type CompanyInput = z.infer<typeof CompanySchema>;
+export type UpdateCompanyInput = z.infer<typeof UpdateCompanySchema>;
+
+export const ContactSchema = z.strictObject({
+  id: uuid.optional(),
+  name: name,
+  email: z.union([z.literal(''), z.email().max(320)]).optional(),
+  phone: shortText(50).optional(),
+  jobTitle: shortText(150).optional(),
+  notes: longText.optional(),
+  companyId: optionalUuid,
+  ownerId: optionalUuid,
+});
+export const UpdateContactSchema = ContactSchema.omit({ id: true }).partial();
+export type ContactInput = z.infer<typeof ContactSchema>;
+export type UpdateContactInput = z.infer<typeof UpdateContactSchema>;
+
+export const DealSchema = z.strictObject({
+  id: uuid.optional(),
+  title: name,
+  companyId: optionalUuid,
+  contactId: optionalUuid,
+  stage: z.enum(DEAL_STAGES).optional(),
+  value: money.min(0).optional(),
+  currency: currency.optional(),
+  expectedClose: isoDate.nullable().optional(),
+  ownerId: optionalUuid,
+  lostReason: shortText(500).optional(),
+  notes: longText.optional(),
+  position: z.number().finite().optional(),
+});
+export const UpdateDealSchema = DealSchema.omit({ id: true }).partial();
+export type DealInput = z.infer<typeof DealSchema>;
+export type UpdateDealInput = z.infer<typeof UpdateDealSchema>;
+
+export const ActivitySchema = z
+  .strictObject({
+    id: uuid.optional(),
+    type: z.enum(ACTIVITY_TYPES),
+    subject: z.string().trim().min(1, 'Required').max(300),
+    body: longText.optional(),
+    companyId: optionalUuid,
+    contactId: optionalUuid,
+    dealId: optionalUuid,
+    dueAt: z.iso.datetime({ offset: true }).nullable().optional(),
+    assigneeId: optionalUuid,
+    done: z.boolean().optional(),
+  })
+  .refine((a) => a.companyId || a.contactId || a.dealId, { message: 'Link the activity to a company, contact or deal', path: ['companyId'] });
+export const UpdateActivitySchema = z.strictObject({
+  subject: z.string().trim().min(1).max(300).optional(),
+  body: longText.optional(),
+  dueAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  assigneeId: optionalUuid,
+  done: z.boolean().optional(),
+});
+export type ActivityInput = z.infer<typeof ActivitySchema>;
+export type UpdateActivityInput = z.infer<typeof UpdateActivitySchema>;
+
+const quoteLine = z.strictObject({
+  description: z.string().trim().min(1, 'Describe the item').max(500),
+  quantity: z.number().finite().min(0).max(1_000_000).refine((n) => Math.round(n * 1000) === n * 1000, 'At most 3 decimals'),
+  unitPrice: money,
+  taxRate: z.number().finite().min(0).max(100),
+});
+export const QuoteSchema = z.strictObject({
+  id: uuid.optional(),
+  title: name,
+  companyId: optionalUuid,
+  contactId: optionalUuid,
+  dealId: optionalUuid,
+  status: z.enum(QUOTE_STATUSES).optional(),
+  currency: currency.optional(),
+  issueDate: isoDate.optional(),
+  validUntil: isoDate.nullable().optional(),
+  lines: z.array(quoteLine).max(200).optional(),
+  notes: longText.optional(),
+});
+export const UpdateQuoteSchema = QuoteSchema.omit({ id: true }).partial();
+export type QuoteInput = z.infer<typeof QuoteSchema>;
+export type UpdateQuoteInput = z.infer<typeof UpdateQuoteSchema>;
+
+type Person = { id: string; name: string } | null;
+export interface CompanyDto {
+  id: string; workspaceId: string; name: string; website: string; industry: string; phone: string; address: string; notes: string;
+  owner: Person; contactCount: number; /** Open deal value per currency (never added across currencies). */ openDeals: { currency: string; value: number }[]; createdAt: string; updatedAt: string;
+}
+export interface ContactDto {
+  id: string; workspaceId: string; name: string; email: string; phone: string; jobTitle: string; notes: string;
+  company: { id: string; name: string } | null; owner: Person; createdAt: string; updatedAt: string;
+}
+export interface DealDto {
+  id: string; workspaceId: string; title: string; stage: (typeof DEAL_STAGES)[number]; value: number; currency: string;
+  expectedClose: string | null; lostReason: string; closedAt: string | null; position: number; notes: string;
+  company: { id: string; name: string } | null; contact: { id: string; name: string } | null; owner: Person; createdAt: string; updatedAt: string;
+}
+export interface CrmActivityDto {
+  id: string; type: (typeof ACTIVITY_TYPES)[number]; subject: string; body: string;
+  company: { id: string; name: string } | null; contact: { id: string; name: string } | null; deal: { id: string; title: string } | null;
+  dueAt: string | null; doneAt: string | null; assignee: Person; createdBy: { id: string; name: string }; createdAt: string;
+}
+export interface QuoteDto {
+  id: string; workspaceId: string; number: string; title: string; status: (typeof QUOTE_STATUSES)[number]; currency: string;
+  issueDate: string; validUntil: string | null; lines: { description: string; quantity: number; unitPrice: number; taxRate: number }[];
+  subtotal: number; tax: number; total: number; notes: string;
+  company: { id: string; name: string; address: string } | null; contact: { id: string; name: string; email: string } | null; deal: { id: string; title: string } | null;
+  createdBy: { id: string; name: string }; createdAt: string; updatedAt: string;
+}
+export interface CrmSummaryDto {
+  pipeline: { currency: string; openValue: number; weighted: number; wonThisMonth: number; stages: Record<(typeof DEAL_STAGES)[number], { count: number; value: number }> }[];
+  winRate: number | null;
+  counts: { companies: number; contacts: number; openDeals: number };
+  myFollowUps: CrmActivityDto[];
 }

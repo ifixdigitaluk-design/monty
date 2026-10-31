@@ -4,6 +4,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   date,
   doublePrecision,
@@ -910,6 +911,136 @@ export const userIdentities = pgTable(
   (t) => [uniqueIndex('user_identities_provider_subject_idx').on(t.provider, t.subject), index('user_identities_user_idx').on(t.userId)],
 );
 
+// ---------- CRM ----------
+const tenant = () => ({ organisationId: uuid('organisation_id').notNull(), workspaceId: uuid('workspace_id').notNull() });
+const userRef = (name: string) => uuid(name).references(() => users.id);
+
+export const crmCompanies = pgTable(
+  'crm_companies',
+  {
+    id: pk(),
+    ...tenant(),
+    name: text('name').notNull(),
+    website: text('website').notNull().default(''),
+    industry: text('industry').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    address: text('address').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    ownerId: userRef('owner_id'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_companies_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_companies_ws_idx').on(t.workspaceId, t.name)],
+);
+
+export const crmContacts = pgTable(
+  'crm_contacts',
+  {
+    id: pk(),
+    ...tenant(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    email: text('email').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    jobTitle: text('job_title').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    ownerId: userRef('owner_id'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_contacts_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_contacts_ws_idx').on(t.workspaceId, t.name), index('crm_contacts_company_idx').on(t.companyId)],
+);
+
+export const crmDeals = pgTable(
+  'crm_deals',
+  {
+    id: pk(),
+    ...tenant(),
+    title: text('title').notNull(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'set null' }),
+    /** lead | qualified | proposal | negotiation | won | lost */
+    stage: text('stage').notNull().default('lead'),
+    /** Minor units (pence/cents). */
+    value: bigint('value', { mode: 'number' }).notNull().default(0),
+    currency: text('currency').notNull().default('GBP'),
+    expectedClose: date('expected_close'),
+    ownerId: userRef('owner_id'),
+    lostReason: text('lost_reason').notNull().default(''),
+    closedAt: ts('closed_at'),
+    position: doublePrecision('position').notNull().default(0),
+    notes: text('notes').notNull().default(''),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_deals_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_deals_ws_idx').on(t.workspaceId, t.stage), index('crm_deals_company_idx').on(t.companyId)],
+);
+
+export const crmActivities = pgTable(
+  'crm_activities',
+  {
+    id: pk(),
+    ...tenant(),
+    /** note | call | meeting | email | task */
+    type: text('type').notNull(),
+    subject: text('subject').notNull(),
+    body: text('body').notNull().default(''),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'cascade' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'cascade' }),
+    dealId: uuid('deal_id').references(() => crmDeals.id, { onDelete: 'cascade' }),
+    /** A follow-up when set: who should do it and when. */
+    dueAt: ts('due_at'),
+    assigneeId: userRef('assignee_id'),
+    doneAt: ts('done_at'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'crm_activities_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('crm_activities_ws_due_idx').on(t.workspaceId, t.dueAt),
+    index('crm_activities_company_idx').on(t.companyId),
+    index('crm_activities_contact_idx').on(t.contactId),
+    index('crm_activities_deal_idx').on(t.dealId),
+  ],
+);
+
+export const crmQuotes = pgTable(
+  'crm_quotes',
+  {
+    id: pk(),
+    ...tenant(),
+    /** Q-0001, unique per workspace. */
+    number: text('number').notNull(),
+    title: text('title').notNull(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'set null' }),
+    dealId: uuid('deal_id').references(() => crmDeals.id, { onDelete: 'set null' }),
+    /** draft | sent | accepted | declined */
+    status: text('status').notNull().default('draft'),
+    currency: text('currency').notNull().default('GBP'),
+    issueDate: date('issue_date').notNull(),
+    validUntil: date('valid_until'),
+    /** [{ description, quantity, unitPrice (minor units), taxRate (percent) }] */
+    lines: jsonb('lines').$type<{ description: string; quantity: number; unitPrice: number; taxRate: number }[]>().notNull().default(sql`'[]'::jsonb`),
+    subtotal: bigint('subtotal', { mode: 'number' }).notNull().default(0),
+    tax: bigint('tax', { mode: 'number' }).notNull().default(0),
+    total: bigint('total', { mode: 'number' }).notNull().default(0),
+    notes: text('notes').notNull().default(''),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_quotes_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), uniqueIndex('crm_quotes_number_idx').on(t.workspaceId, t.number)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -973,3 +1104,8 @@ export type DatabaseTable = typeof databases.$inferSelect;
 export type DatabaseField = typeof databaseFields.$inferSelect;
 export type DatabaseRow = typeof databaseRows.$inferSelect;
 export type DatabaseView = typeof databaseViews.$inferSelect;
+export type CrmCompany = typeof crmCompanies.$inferSelect;
+export type CrmContact = typeof crmContacts.$inferSelect;
+export type CrmDeal = typeof crmDeals.$inferSelect;
+export type CrmActivity = typeof crmActivities.$inferSelect;
+export type CrmQuote = typeof crmQuotes.$inferSelect;
