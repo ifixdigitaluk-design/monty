@@ -4,6 +4,15 @@
  */
 import type {
   ActivityDto,
+  AuditEntryDto,
+  CreatedInvitationDto,
+  CreateInvitationInput,
+  InvitationDto,
+  InvitationPreviewDto,
+  OrgMemberDto,
+  OrgRoleValue,
+  WorkspaceMemberDto,
+  WorkspaceRoleValue,
   ApiErrorBody,
   CreateOrganisationInput,
   CreateProjectInput,
@@ -91,6 +100,27 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       create: (input: CreateOrganisationInput) => request<{ organisation: OrganisationDto }>('POST', '/organisations', input),
       createWorkspace: (orgId: string, input: CreateWorkspaceInput) =>
         request<{ workspace: WorkspaceSummaryDto }>('POST', `/organisations/${orgId}/workspaces`, input),
+    },
+    members: {
+      list: (orgId: string) => request<{ members: OrgMemberDto[] }>('GET', `/organisations/${orgId}/members`),
+      changeRole: (orgId: string, userId: string, role: OrgRoleValue) =>
+        request<void>('PATCH', `/organisations/${orgId}/members/${userId}`, { role }),
+      remove: (orgId: string, userId: string) => request<void>('DELETE', `/organisations/${orgId}/members/${userId}`),
+      audit: (orgId: string) => request<{ entries: AuditEntryDto[] }>('GET', `/organisations/${orgId}/audit`),
+      workspace: (workspaceId: string) => request<{ members: WorkspaceMemberDto[] }>('GET', `/workspaces/${workspaceId}/members`),
+      setWorkspaceRole: (workspaceId: string, userId: string, role: WorkspaceRoleValue) =>
+        request<void>('PUT', `/workspaces/${workspaceId}/members/${userId}`, { role }),
+      removeFromWorkspace: (workspaceId: string, userId: string) =>
+        request<void>('DELETE', `/workspaces/${workspaceId}/members/${userId}`),
+    },
+    invitations: {
+      list: (orgId: string) => request<{ invitations: InvitationDto[] }>('GET', `/organisations/${orgId}/invitations`),
+      create: (orgId: string, input: CreateInvitationInput) =>
+        request<{ invitation: CreatedInvitationDto }>('POST', `/organisations/${orgId}/invitations`, input),
+      revoke: (orgId: string, invitationId: string) => request<void>('DELETE', `/organisations/${orgId}/invitations/${invitationId}`),
+      preview: (token: string) => request<{ invitation: InvitationPreviewDto }>('GET', `/invitations/${encodeURIComponent(token)}`),
+      accept: (token: string) =>
+        request<{ organisationId: string; workspaceId: string | null }>('POST', `/invitations/${encodeURIComponent(token)}/accept`),
     },
     projects: {
       list: (workspaceId: string) =>

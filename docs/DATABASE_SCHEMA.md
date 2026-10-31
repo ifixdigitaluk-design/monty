@@ -25,6 +25,8 @@ User ─┬─< Session
 | `TaskDependency` | Task A depends on B | unique pair; both tasks same org (API-enforced, Phase 2 API) |
 | `ActivityEvent` | Append-only history | indexed by (`projectId`,`createdAt`) |
 | `OutboxEvent` | Transactional outbox | `publishedAt` null = pending; index on pending |
+| `Invitation` (1b) | Pending org invitations | `tokenHash` unique (raw token never stored); partial unique index = one open invite per (org, email); composite FK keeps the optional workspace in the same org; 7-day expiry |
+| `AuditLog` (1b) | Security/admin events | `organisationId` null for account-level events (login, logout); indexed by org and actor |
 
 ## 3. Rules
 - All IDs are UUID v4 (client-supplied allowed on create for idempotency).
@@ -38,11 +40,10 @@ User ─┬─< Session
 ## 4. Planned tables
 | Phase | Tables |
 |---|---|
-| 2 | `Team`, `TeamMembership`, `Invitation`, `Milestone`, `Label`, `TaskLabel`, `Comment`, `Mention`, `Attachment`, `Document`, `DocumentVersion`, `Notification`, `NotificationPreference`, `PropertyDefinition` + typed value tables, `SavedView` |
+| 2 | `Team`, `TeamMembership`, `Milestone`, `Label`, `TaskLabel`, `Comment`, `Mention`, `Attachment`, `Document`, `DocumentVersion`, `Notification`, `NotificationPreference`, `PropertyDefinition` + typed value tables, `SavedView` |
 | 3 | `DocumentYjsUpdate` (or snapshot+updates), `DeviceRegistration`, `SyncCursor` |
 | 4 | `AiConversation`, `AiProposal`, `AiAction`, `ReadinessRuleConfig` |
 | 5 | `AutomationRule`, `AutomationExecution`, `Integration`, `IntegrationToken` (encrypted), `Plan`, `Subscription`, `Entitlement`, `UsageCounter` |
-| All | `AuditLog` (admin & security events; separate from product activity) |
 
 ## 5. Migrations
 `pnpm db:generate` (drizzle-kit) creates SQL from schema changes; the SQL is committed and reviewed; `pnpm db:migrate` applies it. Forward-only in production. Destructive changes use expand → migrate data → contract across releases.

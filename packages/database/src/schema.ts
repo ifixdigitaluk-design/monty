@@ -15,6 +15,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -271,6 +272,64 @@ export const outboxEvents = pgTable(
   (t) => [index('outbox_pending_idx').on(t.publishedAt, t.createdAt)],
 );
 
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id')
+      .notNull()
+      .references(() => organisations.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: organisationRole('role').notNull(),
+    workspaceId: uuid('workspace_id'),
+    workspaceRole: workspaceRole('workspace_role'),
+    /** SHA-256 of the one-time token; the raw token is only ever shown to the inviter once. */
+    tokenHash: text('token_hash').notNull().unique(),
+    invitedById: uuid('invited_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    expiresAt: ts('expires_at').notNull(),
+    acceptedAt: ts('accepted_at'),
+    acceptedById: uuid('accepted_by_id').references(() => users.id),
+    revokedAt: ts('revoked_at'),
+  },
+  (t) => [
+    // The optional workspace must belong to the same organisation.
+    foreignKey({
+      name: 'invitations_workspace_org_fk',
+      columns: [t.workspaceId, t.organisationId],
+      foreignColumns: [workspaces.id, workspaces.organisationId],
+    }).onDelete('cascade'),
+    // At most one open invitation per email per organisation.
+    uniqueIndex('invitations_pending_unique')
+      .on(t.organisationId, t.email)
+      .where(sql`accepted_at IS NULL AND revoked_at IS NULL`),
+    index('invitations_org_idx').on(t.organisationId, t.createdAt),
+  ],
+);
+
+/** Security and administration events. Separate from product activity; append-only. */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').references(() => organisations.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    targetType: text('target_type'),
+    targetId: text('target_id'),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('audit_org_idx').on(t.organisationId, t.createdAt),
+    index('audit_actor_idx').on(t.actorId, t.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type Organisation = typeof organisations.$inferSelect;
@@ -279,3 +338,5 @@ export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type OutboxEvent = typeof outboxEvents.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

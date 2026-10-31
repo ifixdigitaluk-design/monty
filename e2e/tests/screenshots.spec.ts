@@ -56,4 +56,20 @@ test('capture key screens', async ({ page }) => {
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.waitForTimeout(400);
   await page.screenshot({ path: 'screenshots/08-mobile-nav.png' });
+
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/tasks');
+  await page.getByRole('button', { name: '+ New organisation' }).click();
+  await page.getByLabel('Organisation name').fill('Northwind Studio');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.getByRole('link', { name: 'Members & settings' }).click();
+  await page.getByRole('tab', { name: 'Invitations' }).click();
+  await page.getByLabel('Email').fill('sam@example.com');
+  await page.getByRole('button', { name: 'Create invitation' }).click();
+  await expect(page.getByLabel('Invitation link')).toBeVisible();
+  await page.screenshot({ path: 'screenshots/09-invitations.png', fullPage: true });
+  await page.getByRole('tab', { name: 'Audit log' }).click();
+  await expect(page.locator('[data-audit]').first()).toBeVisible();
+  await page.screenshot({ path: 'screenshots/10-audit.png', fullPage: true });
 });

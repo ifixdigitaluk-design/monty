@@ -1,5 +1,5 @@
 import type { ComputedProjectStatus } from '@monty/domain';
-import type { Priority, ProjectLifecycle, TaskDto } from '@monty/validation';
+import type { OrgRoleValue, Priority, ProjectLifecycle, TaskDto, WorkspaceRoleValue } from '@monty/validation';
 
 export const TASK_STATUS_LABEL: Record<TaskDto['status'], string> = {
   TODO: 'To do',
@@ -49,3 +49,6 @@ export const STATUS_TONE: Record<ComputedProjectStatus, 'neutral' | 'success' | 
   COMPLETED: 'success',
   CANCELLED: 'neutral',
 };
+
+export const ORG_ROLE_LABEL: Record<OrgRoleValue, string> = { OWNER: 'Owner', ADMIN: 'Admin', MEMBER: 'Member', GUEST: 'Guest' };
+export const WS_ROLE_LABEL: Record<WorkspaceRoleValue, string> = { ADMIN: 'Admin', MEMBER: 'Member', VIEWER: 'Viewer' };

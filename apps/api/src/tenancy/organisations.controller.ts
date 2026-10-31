@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { clientOf } from './members.controller';
 import {
   CreateOrganisationInput,
   CreateOrganisationSchema,
@@ -19,8 +21,12 @@ export class OrganisationsController {
   }
 
   @Post()
-  async create(@Auth() auth: AuthContext, @Body(new ZodPipe(CreateOrganisationSchema)) body: CreateOrganisationInput) {
-    return { organisation: await this.orgs.create(auth.userId, body) };
+  async create(
+    @Auth() auth: AuthContext,
+    @Body(new ZodPipe(CreateOrganisationSchema)) body: CreateOrganisationInput,
+    @Req() req: Request,
+  ) {
+    return { organisation: await this.orgs.create(auth.userId, body, clientOf(req)) };
   }
 
   @Post(':orgId/workspaces')
@@ -28,7 +34,8 @@ export class OrganisationsController {
     @Auth() auth: AuthContext,
     @Param('orgId', UuidPipe) orgId: string,
     @Body(new ZodPipe(CreateWorkspaceSchema)) body: CreateWorkspaceInput,
+    @Req() req: Request,
   ) {
-    return { workspace: await this.orgs.createWorkspace(auth.userId, orgId, body) };
+    return { workspace: await this.orgs.createWorkspace(auth.userId, orgId, body, clientOf(req)) };
   }
 }

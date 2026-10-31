@@ -14,6 +14,9 @@ import { TasksService } from './tasks/tasks.service';
 import { AccessService } from './tenancy/access.service';
 import { OrganisationsController } from './tenancy/organisations.controller';
 import { OrganisationsService } from './tenancy/organisations.service';
+import { AuditService } from './audit/audit.service';
+import { MembersController } from './tenancy/members.controller';
+import { MembersService } from './tenancy/members.service';
 
 @Controller('health')
 class HealthController {
@@ -37,10 +40,12 @@ export class AppModule {
         ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: config.rateLimit }]),
         DbModule,
       ],
-      controllers: [HealthController, AuthController, OrganisationsController, ProjectsController],
+      controllers: [HealthController, AuthController, OrganisationsController, ProjectsController, MembersController],
       providers: [
         { provide: CONFIG, useValue: config },
         AuthService,
+        AuditService,
+        MembersService,
         AccessService,
         OrganisationsService,
         ProjectsService,

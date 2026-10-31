@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateTaskSchema, RegisterSchema, UpdateProjectSchema, UpdateTaskSchema } from '../src';
+import { CreateInvitationSchema, CreateTaskSchema, RegisterSchema, UpdateProjectSchema, UpdateTaskSchema } from '../src';
 
 describe('validation schemas', () => {
   it('normalises email to lower case', () => {
@@ -23,5 +23,13 @@ describe('validation schemas', () => {
     expect(
       UpdateProjectSchema.safeParse({ expectedVersion: 1, startDate: '2026-12-02', targetDate: '2026-12-01' }).success,
     ).toBe(false);
+  });
+});
+
+describe('invitation schema', () => {
+  it('requires workspace and workspace role together and forbids OWNER', () => {
+    expect(CreateInvitationSchema.safeParse({ email: 'A@B.co', role: 'MEMBER' }).success).toBe(true);
+    expect(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'MEMBER', workspaceRole: 'VIEWER' }).success).toBe(false);
+    expect(CreateInvitationSchema.safeParse({ email: 'a@b.co', role: 'OWNER' }).success).toBe(false);
   });
 });

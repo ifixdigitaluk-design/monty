@@ -6,8 +6,10 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
+import { WorkspaceAccess } from '@/components/WorkspaceAccess';
 import { Badge, Button, EmptyState, ErrorBanner, Field, Input, Modal, PageLoading, Textarea } from '@/components/ui';
 import { api, errorMessage, formatDate } from '@/lib/api';
+import { useSession } from '@/lib/session';
 import { LIFECYCLE_LABEL } from '@/lib/labels';
 
 export default function WorkspacePage() {
@@ -21,9 +23,11 @@ export default function WorkspacePage() {
 function WorkspaceView() {
   const id = useSearchParams().get('id');
   const router = useRouter();
+  const { organisations } = useSession();
   const [data, setData] = useState<{ projects: ProjectListItemDto[]; workspace: WorkspaceSummaryDto } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [managing, setManaging] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -45,6 +49,7 @@ function WorkspaceView() {
   if (!data) return <PageLoading />;
 
   const canCreate = canInWorkspace(data.workspace.role, 'project.create');
+  const isPersonal = organisations.find((o) => o.workspaces.some((w) => w.id === id))?.kind === 'PERSONAL';
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -53,11 +58,16 @@ function WorkspaceView() {
           <h1 className="text-xl font-semibold">{data.workspace.name}</h1>
           <p className="text-muted">Projects in this workspace</p>
         </div>
-        {canCreate ? (
-          <Button variant="primary" onClick={() => setCreating(true)}>
-            New project
-          </Button>
-        ) : null}
+        <div className="flex gap-2">
+          {canInWorkspace(data.workspace.role, 'workspace.manage') && !isPersonal ? (
+            <Button onClick={() => setManaging(true)}>Manage access</Button>
+          ) : null}
+          {canCreate ? (
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              New project
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       {data.projects.length === 0 ? (
@@ -96,6 +106,7 @@ function WorkspaceView() {
         </ul>
       )}
 
+      {managing ? <WorkspaceAccess workspaceId={id} open={managing} onClose={() => setManaging(false)} /> : null}
       <CreateProjectModal
         open={creating}
         onClose={() => setCreating(false)}

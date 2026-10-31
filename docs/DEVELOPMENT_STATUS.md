@@ -1,6 +1,6 @@
 # Development Status (master record)
 
-Last updated: 31 Oct 2026 · Session 1 · Phase 0 complete, Phase 1 vertical slice delivered.
+Last updated: 31 Oct 2026 · Session 2 · Phase 1b membership work delivered (invitations, member management, audit log).
 
 ## Status definitions
 - **Implemented**: code exists and builds.
@@ -30,9 +30,13 @@ Implementation status and verification status are recorded separately below.
 | F-15 | Web UI: auth, sidebar, workspace, project list/board, task drawer, readiness panel, activity, sessions, dark mode, mobile layout | Implemented | Verified | 4 Playwright flows; screenshots reviewed (light, dark, 390px mobile) |
 | F-16 | Structured JSON logging with request IDs | Implemented | Partially tested | `X-Request-Id` asserted; log content reviewed manually |
 | F-17 | CI workflow (GitHub Actions) | Implemented | **Not verified** | not run yet: the repo hasn't been pushed |
-| — | Client write serialisation (no false conflicts on rapid edits) | Implemented | Verified | regression Playwright test (bug found this session) |
+| — | Client write serialisation (no false conflicts on rapid edits) | Implemented | Verified | regression Playwright test (bug found in session 1) |
+| B-01 | Invitations: create, preview, accept, revoke; email-bound, single-use, expiring | Implemented | Verified | 7 API tests; Playwright invite → sign-up → accept, and wrong-account test |
+| B-02 | Member management: list, role change, remove, leave; last-owner protection; workspace access grant/change/remove | Implemented | Verified | 8 API tests incl. concurrent demotion race; Playwright role change, access removal and member removal |
+| B-04 | Audit log (security + admin events) with org-admin view | Implemented | Verified | 2 API tests; Playwright audit tab |
+| B-02 UI | Members & settings page (members, invitations, audit tabs), workspace "Manage access", /invite page | Implemented | Verified | Playwright; screenshots reviewed |
 
-Not started: invitations and member management UI, RLS, audit log, email verification and password reset, milestones, dependencies API, comments, attachments, documents and editor, search, notifications, realtime, desktop, AI, automation, billing, integrations, analytics.
+Not started: RLS (B-03), email provider + invitation emails (B-08), email verification (B-05), password reset (B-06), Redis rate limiting (B-07), milestones, dependencies API, comments, attachments, documents and editor, search, notifications, realtime, desktop, AI, automation, billing, integrations, analytics.
 
 ## Session 1 report
 
@@ -71,3 +75,36 @@ Not started: invitations and member management UI, RLS, audit log, email verific
     - B-05 / B-06 email verification and password reset
     - Run the CI pipeline on GitHub
     - Then Phase 2: milestones, dependencies, comments, documents
+
+## Session 2 report (Phase 1b)
+
+1. **Inspected**: GitHub is still not connected to this session. The proxy only allows repositories attached to the session, so no repo could be created or pushed. Postgres had stopped while idle; I restarted it and the data was intact.
+2. **Developed**:
+   - Invitations: link-based, email-bound, single-use, 7-day expiry.
+   - Member management: org roles with owner safeguards, plus workspace access.
+   - Audit log: security and admin events.
+   - UI: Members & settings page, workspace Manage access dialog, /invite accept page, and email prefill on sign-up and sign-in.
+3. **Files changed**:
+   - New: `packages/domain/src/membership.ts`, `packages/database/drizzle/0001_invitations_audit.sql`, `apps/api/src/audit/*`, `apps/api/src/tenancy/members.*`, `apps/web/src/app/{organisation,invite}/page.tsx`, `apps/web/src/components/WorkspaceAccess.tsx`, `apps/api/test/members.e2e.test.ts`, `e2e/tests/team-membership.spec.ts`.
+   - Updated: auth and organisation services (audit events), api-client, validation, sidebar, docs.
+4. **Functional**: B-01, B-02 and B-04 as listed above.
+5. **Tests executed** (31 Oct 2026):
+   - `pnpm build`, `pnpm typecheck` and `pnpm lint` → exit 0
+   - `pnpm test` → domain 33/33, validation 7/7, API 58/58
+   - `pnpm e2e` → 6/6, run twice consecutively
+   - `pnpm audit --prod` → clean
+6. **Passed**: all of the above.
+7. **Failed**: none at the end of the session. One screenshot-helper mistake was fixed along the way.
+8. **Incomplete**:
+   - Invitations are shared as a copyable link; there is no email delivery yet (needs an email provider choice).
+   - RLS, email verification, password reset and Redis rate limiting are not started.
+   - CI is still not run.
+9. **Risks**:
+   - **No email provider yet**, so account recovery isn't possible. This blocks a public launch.
+   - **RLS is still pending.**
+   - **Invite link handling**: anyone who holds the link can see the inviter's name and the invited email. That is a deliberate trade-off for preview UX; tokens are 256-bit and rate-limited.
+10. **Next**:
+    - Choose an email provider (Postmark, Resend or AWS SES), then build B-08, B-05 and B-06.
+    - B-03 RLS.
+    - Push to GitHub and run CI.
+    - Then Phase 2.

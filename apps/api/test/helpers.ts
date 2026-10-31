@@ -11,6 +11,8 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'invitations',
+  'audit_logs',
   'outbox_events',
   'activity_events',
   'task_dependencies',
@@ -66,7 +68,7 @@ export async function signUp(app: INestApplication, name = 'User') {
 }
 
 /** Convenience: sends a JSON mutation with the required client header. */
-export function send(agent: request.Agent, method: 'post' | 'patch' | 'delete', url: string, body?: unknown) {
+export function send(agent: request.Agent, method: 'post' | 'patch' | 'put' | 'delete', url: string, body?: unknown) {
   const req = agent[method](url).set('X-Monty-Client', 'web');
   return body === undefined ? req : req.send(body as object);
 }

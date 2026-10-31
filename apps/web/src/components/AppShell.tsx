@@ -93,6 +93,9 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                 </button>
               ) : null}
             </div>
+            {org.kind === 'TEAM' && canInOrg(org.role, 'org.read')
+              ? navItem(`/organisation?id=${org.id}`, 'Members & settings', pathname === '/organisation' && params.get('id') === org.id)
+              : null}
             {org.workspaces.length === 0 ? (
               <p className="px-2 text-[12px] text-muted">No workspaces you can access.</p>
             ) : (

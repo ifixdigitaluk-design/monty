@@ -15,6 +15,7 @@ import type { LoginInput, RegisterInput, SessionDto, UserDto } from '@monty/vali
 import { AppConfig, CONFIG } from '../config';
 import { AppException, conflict, notFound } from '../common/errors';
 import { randomSuffix } from '../common/slug';
+import { AuditService } from '../audit/audit.service';
 import { DbService } from '../db/db.service';
 
 const ARGON_OPTS = { memoryCost: 19456, timeCost: 2, parallelism: 1 }; // OWASP baseline for Argon2id
@@ -35,6 +36,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     private readonly dbs: DbService,
     @Inject(CONFIG) private readonly config: AppConfig,
+    private readonly audit: AuditService,
   ) {}
 
   async onModuleInit() {
@@ -55,6 +57,7 @@ export class AuthService implements OnModuleInit {
         await tx.insert(organisationMemberships).values({ organisationId: org!.id, userId: u!.id, role: 'OWNER' });
         const [ws] = await tx.insert(workspaces).values({ organisationId: org!.id, name: 'Personal', slug: 'personal' }).returning();
         await tx.insert(workspaceMemberships).values({ workspaceId: ws!.id, userId: u!.id, role: 'ADMIN' });
+        await this.audit.record({ actorId: u!.id, action: 'auth.registered', targetType: 'user', targetId: u!.id, client: toClient(client) }, tx);
         return u!;
       });
     } catch (err) {
@@ -69,9 +72,17 @@ export class AuthService implements OnModuleInit {
     const user = await this.dbs.db.query.users.findFirst({ where: eq(users.email, input.email) });
     const valid = await verify(user?.passwordHash ?? this.dummyHash, input.password);
     if (!user || user.deletedAt || !valid) {
+      await this.audit.recordSafely({
+        actorId: user?.id ?? null,
+        action: 'auth.login_failed',
+        // Record the attempted email only when it belongs to a real account (avoid storing arbitrary input).
+        data: user ? { email: user.email } : {},
+        client: toClient(client),
+      });
       throw new AppException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect');
     }
     const token = await this.createSession(user.id, client);
+    await this.audit.recordSafely({ actorId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id, client: toClient(client) });
     return { user: toUserDto(user), token };
   }
 
@@ -113,13 +124,20 @@ export class AuthService implements OnModuleInit {
     return toUserDto(user);
   }
 
-  async revoke(userId: string, sessionId: string): Promise<void> {
+  async revoke(userId: string, sessionId: string, client: ClientInfo = {}, reason: 'logout' | 'revoke' = 'revoke'): Promise<void> {
     const res = await this.dbs.db
       .update(sessions)
       .set({ revokedAt: new Date() })
       .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), isNull(sessions.revokedAt)))
       .returning({ id: sessions.id });
     if (res.length === 0) throw notFound('Session');
+    await this.audit.recordSafely({
+      actorId: userId,
+      action: reason === 'logout' ? 'auth.logout' : 'session.revoked',
+      targetType: 'session',
+      targetId: sessionId,
+      client: toClient(client),
+    });
   }
 
   async listSessions(userId: string, currentSessionId: string): Promise<SessionDto[]> {
@@ -141,4 +159,8 @@ export class AuthService implements OnModuleInit {
 
 function toUserDto(u: { id: string; email: string; name: string }): UserDto {
   return { id: u.id, email: u.email, name: u.name };
+}
+
+function toClient(c: ClientInfo) {
+  return { ip: c.ip, userAgent: c.userAgent };
 }

@@ -37,8 +37,24 @@ Base path `/api/v1`. JSON. Contracts are the Zod schemas in `packages/validation
 | GET | `/projects/:projectId/activity` | Last 100 activity events |
 | GET | `/me/tasks` | Open tasks assigned to me across accessible workspaces |
 
+### Membership, invitations and audit (Phase 1b)
+| Method | Path | Who | Description |
+|---|---|---|---|
+| GET | `/organisations/:orgId/members` | org Member+ | Members with org role and explicit workspace roles |
+| PATCH | `/organisations/:orgId/members/:userId` | Owner/Admin | `{role}`. Only owners grant or change ownership; the last owner can't be demoted (row-locked, so concurrent changes are safe) |
+| DELETE | `/organisations/:orgId/members/:userId` | Owner/Admin, or self (leave) | Removes org membership and every workspace membership in that org. Personal orgs are rejected (400) |
+| GET | `/organisations/:orgId/invitations` | Owner/Admin | Pending invitations (never includes tokens) |
+| POST | `/organisations/:orgId/invitations` | Owner/Admin | `{email, role: ADMIN/MEMBER/GUEST, workspaceId?, workspaceRole?}` → `invitePath` with a one-time token, returned once. 409 for an existing member or a pending invite; 400 for a personal org |
+| DELETE | `/organisations/:orgId/invitations/:id` | Owner/Admin | Revoke |
+| GET | `/invitations/:token` | public, rate-limited | Preview: organisation, inviter, email, role, workspace, status |
+| POST | `/invitations/:token/accept` | signed in, rate-limited | Signed-in email must match the invite (else 403). Single use (410 once accepted/revoked/expired). Never downgrades an existing role |
+| GET | `/organisations/:orgId/audit` | Owner/Admin | Last 200 audit entries |
+| GET | `/workspaces/:id/members` | workspace read | Workspace admins also see org members without access, so they can grant it |
+| PUT | `/workspaces/:id/members/:userId` | workspace Admin | `{role}`. Target must be an org member (400 otherwise) |
+| DELETE | `/workspaces/:id/members/:userId` | workspace Admin | Remove explicit workspace access |
+
 ## Planned
-Phase 2: members & invitations, teams, milestones, dependencies, comments, attachments (pre-signed S3 URLs), documents, search, notifications, saved views.
+Phase 2: invitation emails, teams, milestones, dependencies, comments, attachments (pre-signed S3 URLs), documents, search, notifications, saved views.
 Phase 3: `/realtime` WebSocket (subscribe by workspace; events carry `eventId` for de-duplication), desktop token exchange via deep link.
 Phase 4: `/ai/*` (conversations, proposals, approve/reject), readiness rule configuration.
 Phase 5: automations, integrations (OAuth callbacks), billing webhooks, public REST tokens.

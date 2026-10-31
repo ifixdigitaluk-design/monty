@@ -24,7 +24,7 @@ Format: `ID · story · acceptance · tests · depends on`. Status tracked in DE
 | F-17 | CI workflow (GitHub Actions) | runs typecheck, lint, test, build | CI | F-01 |
 
 ## Phase 1b
-B-01 Invitations (email token, accept flow) · B-02 Member management & role changes · B-03 Postgres RLS · B-04 AuditLog · B-05 Email verification · B-06 Password reset · B-07 Redis rate limiting.
+✅ B-01 Invitations (link-based; email delivery is still to do) · ✅ B-02 Member management & role changes · B-03 Postgres RLS · ✅ B-04 AuditLog · B-05 Email verification · B-06 Password reset · B-07 Redis rate limiting · B-08 Email provider integration (needed by B-01 email delivery, B-05, B-06) · B-09 Personal audit view (my sign-ins).
 
 ## Phase 2 (epics)
 Milestones · Dependencies (API + UI + cycle detection) · Labels · Comments & mentions · Attachments (S3, pre-signed) · Documents & block editor · Version history · Backlinks · Calendar view · Timeline/Gantt (read-only first) · Search (FTS) · Notifications & inbox · Custom fields (ADR-011) · Saved views · Home dashboard · Recurring tasks · Templates · Time tracking.

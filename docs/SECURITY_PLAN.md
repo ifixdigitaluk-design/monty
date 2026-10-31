@@ -39,7 +39,9 @@ No compliance or certification is claimed. Items marked ✅ are implemented in t
 
 ## 6. Audit
 - ✅ Product activity events for project/task changes.
-- Planned: separate `AuditLog` for security/admin events (login, session revoke, role change, export).
+- ✅ Separate `audit_logs` table for security and admin events, written in the same transaction as the change. Covers register, login, failed login, logout, session revoke, org/workspace create, invitation create/revoke/accept, role change, member removal/leave, and workspace access changes. Records IP and user agent; no tokens or passwords. Failed logins store an email only when it matches a real account.
+- ✅ Invitations: 256-bit one-time tokens stored as SHA-256, 7-day expiry, bound to the invited email address, rate-limited preview and accept, single use, revocable.
+- ✅ Ownership safeguards: last-owner protection with row locks (tested under concurrency); admins can't grant or remove ownership.
 
 ## 7. Legal review before launch
 UK GDPR / EU GDPR (lawful basis, DPA, sub-processors, data residency options), US state privacy laws, accessibility obligations. Requires qualified legal advice; not decided here.

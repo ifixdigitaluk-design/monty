@@ -45,8 +45,8 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  async logout(@Auth() auth: AuthContext, @Res({ passthrough: true }) res: Response) {
-    await this.auth.revoke(auth.userId, auth.sessionId);
+  async logout(@Auth() auth: AuthContext, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    await this.auth.revoke(auth.userId, auth.sessionId, clientInfo(req), 'logout');
     res.clearCookie(this.config.cookieName, { path: '/' });
   }
 
@@ -62,8 +62,8 @@ export class AuthController {
 
   @Delete('sessions/:id')
   @HttpCode(204)
-  async revoke(@Auth() auth: AuthContext, @Param('id', UuidPipe) id: string) {
-    await this.auth.revoke(auth.userId, id);
+  async revoke(@Auth() auth: AuthContext, @Param('id', UuidPipe) id: string, @Req() req: Request) {
+    await this.auth.revoke(auth.userId, id, clientInfo(req));
   }
 
   private setCookie(res: Response, token: string) {

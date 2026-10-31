@@ -124,6 +124,31 @@ export type UpdateTaskInput = z.infer<typeof UpdateTaskSchema>;
 
 export const TodayQuerySchema = z.strictObject({ today: isoDate.optional() });
 
+// ---------- membership ----------
+export const OrgRoleEnum = z.enum(['OWNER', 'ADMIN', 'MEMBER', 'GUEST']);
+export const WorkspaceRoleEnum = z.enum(['ADMIN', 'MEMBER', 'VIEWER']);
+export type OrgRoleValue = z.infer<typeof OrgRoleEnum>;
+export type WorkspaceRoleValue = z.infer<typeof WorkspaceRoleEnum>;
+
+export const CreateInvitationSchema = z
+  .strictObject({
+    email: z.email().max(320).transform((e) => e.toLowerCase()),
+    role: z.enum(['ADMIN', 'MEMBER', 'GUEST']),
+    workspaceId: uuid.nullable().optional(),
+    workspaceRole: WorkspaceRoleEnum.nullable().optional(),
+  })
+  .refine((v) => !!v.workspaceId === !!v.workspaceRole, {
+    message: 'Choose both a workspace and a workspace role, or neither',
+    path: ['workspaceRole'],
+  });
+export type CreateInvitationInput = z.infer<typeof CreateInvitationSchema>;
+
+export const UpdateMemberRoleSchema = z.strictObject({ role: OrgRoleEnum });
+export type UpdateMemberRoleInput = z.infer<typeof UpdateMemberRoleSchema>;
+
+export const SetWorkspaceMemberSchema = z.strictObject({ role: WorkspaceRoleEnum });
+export type SetWorkspaceMemberInput = z.infer<typeof SetWorkspaceMemberSchema>;
+
 // ---------- response DTOs (types only) ----------
 export interface UserDto {
   id: string;
@@ -229,4 +254,64 @@ export interface ActivityDto {
 
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: unknown };
+}
+
+export interface OrgMemberDto {
+  id: string;
+  name: string;
+  email: string;
+  role: OrgRoleValue;
+  joinedAt: string;
+  workspaces: { id: string; name: string; role: WorkspaceRoleValue }[];
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+
+export interface InvitationDto {
+  id: string;
+  email: string;
+  role: OrgRoleValue;
+  workspaceId: string | null;
+  workspaceName: string | null;
+  workspaceRole: WorkspaceRoleValue | null;
+  invitedBy: { id: string; name: string };
+  createdAt: string;
+  expiresAt: string;
+  status: InvitationStatus;
+}
+
+export interface CreatedInvitationDto extends InvitationDto {
+  /** Relative accept link containing the one-time token. Returned once; never retrievable again. */
+  invitePath: string;
+}
+
+export interface InvitationPreviewDto {
+  organisationName: string;
+  invitedByName: string;
+  email: string;
+  role: OrgRoleValue;
+  workspaceName: string | null;
+  status: InvitationStatus;
+}
+
+export interface WorkspaceMemberDto {
+  id: string;
+  name: string;
+  email: string;
+  orgRole: OrgRoleValue;
+  /** Explicit workspace membership, if any. */
+  workspaceRole: WorkspaceRoleValue | null;
+  /** What the user can actually do here (org owners/admins administer every workspace). */
+  effectiveRole: WorkspaceRoleValue | null;
+}
+
+export interface AuditEntryDto {
+  id: string;
+  action: string;
+  actor: { id: string; name: string } | null;
+  targetType: string | null;
+  targetId: string | null;
+  data: Record<string, unknown>;
+  ip: string | null;
+  createdAt: string;
 }

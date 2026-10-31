@@ -11,11 +11,15 @@ import {
 import type { CreateOrganisationInput, CreateWorkspaceInput, OrganisationDto, WorkspaceSummaryDto } from '@monty/validation';
 import { forbidden, notFound } from '../common/errors';
 import { randomSuffix, slugify } from '../common/slug';
+import { AuditService, ClientInfo } from '../audit/audit.service';
 import { DbService } from '../db/db.service';
 
 @Injectable()
 export class OrganisationsService {
-  constructor(private readonly dbs: DbService) {}
+  constructor(
+    private readonly dbs: DbService,
+    private readonly audit: AuditService,
+  ) {}
 
   async listForUser(userId: string): Promise<OrganisationDto[]> {
     const db = this.dbs.db;
@@ -56,7 +60,7 @@ export class OrganisationsService {
       });
   }
 
-  async create(userId: string, input: CreateOrganisationInput): Promise<OrganisationDto> {
+  async create(userId: string, input: CreateOrganisationInput, client: ClientInfo = {}): Promise<OrganisationDto> {
     return this.dbs.db.transaction(async (tx) => {
       const [org] = await tx
         .insert(organisations)
@@ -64,6 +68,10 @@ export class OrganisationsService {
         .returning();
       await tx.insert(organisationMemberships).values({ organisationId: org!.id, userId, role: 'OWNER' });
       const ws = await this.createWorkspaceTx(tx, org!.id, 'General', userId);
+      await this.audit.record(
+        { organisationId: org!.id, actorId: userId, action: 'organisation.created', targetType: 'organisation', targetId: org!.id, data: { name: org!.name }, client },
+        tx,
+      );
       return {
         id: org!.id,
         name: org!.name,
@@ -75,7 +83,7 @@ export class OrganisationsService {
     });
   }
 
-  async createWorkspace(userId: string, organisationId: string, input: CreateWorkspaceInput): Promise<WorkspaceSummaryDto> {
+  async createWorkspace(userId: string, organisationId: string, input: CreateWorkspaceInput, client: ClientInfo = {}): Promise<WorkspaceSummaryDto> {
     const [membership] = await this.dbs.db
       .select({ role: organisationMemberships.role })
       .from(organisationMemberships)
@@ -84,7 +92,14 @@ export class OrganisationsService {
       .limit(1);
     if (!membership) throw notFound('Organisation');
     if (!canInOrg(membership.role, 'workspace.create')) throw forbidden('Only organisation owners and admins can create workspaces');
-    const ws = await this.dbs.db.transaction((tx) => this.createWorkspaceTx(tx, organisationId, input.name, userId));
+    const ws = await this.dbs.db.transaction(async (tx) => {
+      const ws = await this.createWorkspaceTx(tx, organisationId, input.name, userId);
+      await this.audit.record(
+        { organisationId, actorId: userId, action: 'workspace.created', targetType: 'workspace', targetId: ws.id, data: { name: ws.name }, client },
+        tx,
+      );
+      return ws;
+    });
     return { id: ws.id, name: ws.name, slug: ws.slug, role: 'ADMIN' };
   }
 
