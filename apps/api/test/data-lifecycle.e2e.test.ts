@@ -20,7 +20,6 @@ beforeEach(async () => {
   mailbox.clear();
 });
 
-type U = Awaited<ReturnType<typeof signUp>>;
 const PASSWORD = 'correct-horse-battery';
 
 async function team() {
