@@ -39,6 +39,14 @@ No compliance or certification is claimed. Items marked ✅ are implemented and 
 - Secrets only in environment/secret manager; `.env` git-ignored; `.env.example` has no real values.
 - Logs exclude passwords, tokens, document content.
 
+## 4b. Encryption at rest and data lifecycle (session 5)
+- ✅ Queued emails (which contain one-time links) and personal data exports are AES-256-GCM encrypted with `DATA_ENCRYPTION_KEY` (required in production, 32 bytes), with the row id/idempotency key as authenticated data. Email bodies are wiped once delivery is final.
+- ✅ Exports need the owner's session **and** a one-time token; 24 h expiry; `no-store`; isolation tested against other users.
+- ✅ Account deletion needs the password, then an emailed single-use link opened in the same signed-in account; erasure is one transaction and scrubs IP/user agent/email from audit entries (DATA_LIFECYCLE.md).
+- ✅ Organisation deletion is owner-only with name + password confirmation and a 30-day restore window.
+- ✅ Production refuses insecure SMTP TLS settings and non-HTTPS error webhooks; `/metrics` requires a ≥ 24-character bearer token (constant-time comparison) and exposes no identifiers.
+- Key management: rotating `DATA_ENCRYPTION_KEY` is not implemented (ciphertexts carry a `v1` prefix for that). Losing the key makes queued emails and pending exports unreadable (they fail safely; users resend/re-export).
+
 ## 5. AI security (Phase 4)
 - ✅ Context sent to a provider is limited to the requesting user's permitted project (permission check before assembly).
 - ✅ Workspace content is wrapped in `<project_data>` and declared untrusted in the system prompt; provider output must match a strict Zod schema (unknown fields, bad indexes and oversize values rejected).

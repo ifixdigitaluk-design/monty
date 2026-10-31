@@ -71,3 +71,52 @@ Operational procedures (rollback, restore, incidents, secret rotation) are in RU
 | Webhooks / AI | 5 s / 30 s | Unchanged. |
 
 Transient database failures (statement/lock/idle timeouts, pool exhaustion, dropped connections, deadlocks) return **503 `SERVICE_UNAVAILABLE`** with `Retry-After: 2`, logged as `db_unavailable` with the reason. Covered by `apps/api/test/db-timeouts.e2e.test.ts`.
+
+## Containers
+One `Dockerfile` with three targets, built from the repository root:
+| Image | Build | Runs |
+|---|---|---|
+| `api` | `docker build --target api -t monty-api .` | `node dist/main.js` on port 4000 |
+| migrate | same image as `api` | `node node_modules/@monty/database/dist/migrate-cli.js` with `MIGRATION_DATABASE_URL` (owner role). Run it once per release, before the API. |
+| `web` | `docker build --target web --build-arg API_INTERNAL_URL=http://api:4000 -t monty-web .` | Next.js standalone server on port 3000. **`API_INTERNAL_URL` is fixed at build time.** |
+
+**Image properties:**
+- **Multi-stage build:** the lockfile install is cached, and runtime images contain only compiled output and production dependencies (pnpm `deploy --prod`).
+- **No build tools or source in runtime images.**
+- **Non-root:** runs as UID/GID 10001. Application files are owned by root, so the process can't modify them.
+- **Hardening with compose:** `read_only: true`, `cap_drop: ALL`, `no-new-privileges`, and a `tmpfs` at `/tmp` (web also gets `.next/cache`).
+- **Health checks:** `HEALTHCHECK` targets the API's `/api/v1/health/ready` and the web's `/login`.
+- **Graceful shutdown:** `SIGTERM` stops intake, finishes the mail batch in flight, closes live-update streams and the DB pool, then logs `shutdown_complete`. This took about 0.1 s in the local test, and `stop_grace_period` is 30 s. Use `init: true` (tini) so signals reach Node.
+- **No secrets in images:** all configuration is environment variables at runtime. `.dockerignore` excludes `.env*`, `.git`, tests and local builds.
+- **State:** the API and web are stateless and write nothing to disk. All state lives in Postgres: data, the email queue and encrypted exports. Persist and back up the database volume (`pgdata` in compose). There are no uploaded files yet.
+- **Base image:** `NODE_IMAGE` defaults to `node:22.21.0-bookworm-slim`. Pin it by digest in your registry. You can override it with `--build-arg NODE_IMAGE=...`.
+
+**Local production-like stack** (`compose.yaml`; every port binds to `127.0.0.1` only, with no public networking):
+```bash
+cp infra/docker/.env.example infra/docker/.env     # fill in; never commit
+docker compose --env-file infra/docker/.env up --build
+# postgres (volume pgdata, creates monty_app via infra/docker/init-app-role.sh) → migrate → api → web
+```
+Compose refuses to start if a required secret is missing (`POSTGRES_PASSWORD`, `MONTY_APP_DB_PASSWORD`, `DATA_ENCRYPTION_KEY`, `SMTP_HOST`). Put a TLS-terminating reverse proxy in front for real use: the session cookie is `Secure` in production, so plain HTTP sign-in only works through the proxy.
+
+**Verification status:**
+- **Done here:** the images were built and run in production mode against Postgres, using a **locally built substitute base image** (Ubuntu 24.04 + Node 22.23), because container registries are blocked in this environment. The checks covered:
+  - Health became `healthy`.
+  - Register through the web proxy worked.
+  - The session cookie was `__Host-…; Secure; HttpOnly`.
+  - The filesystem was read-only and the process ran as UID 10001.
+  - `/metrics` worked.
+  - Graceful stop worked.
+  - Queued email survived a container restart.
+- **Not done:** building with the official `node` image (it's in CI, which hasn't run yet) and running `docker compose up` with the official `postgres` image.
+
+## Required secrets and external accounts
+| Secret / account | Used for | Status |
+|---|---|---|
+| Postgres owner and `monty_app` passwords | DB access | Requires my action |
+| `DATA_ENCRYPTION_KEY` (32 bytes) | Encrypting queued emails and exports at rest. **Losing it makes queued emails and pending exports unreadable** (they fail safely). Back it up in the secret manager. | Requires my action |
+| SMTP host, user, password + verified sending domain | All email | Requires external provider |
+| `METRICS_TOKEN` + metrics backend | Monitoring | Requires external provider |
+| `ERROR_WEBHOOK_URL` (error tracker intake) | Error reporting | Requires external provider |
+| `AI_API_KEY`, `AI_MODEL` (optional) | Hosted AI planning | Requires external provider |
+| Hosting account, domain, TLS certificate | Running the service | Requires external provider |

@@ -104,5 +104,22 @@ Webhook requests: `POST` JSON `{event, rule, task, runId}` with `X-Monty-Signatu
 | GET | `/health` | public | liveness + DB |
 | GET | `/health/ready` | public | 503 unless DB and the live-update listener are both up |
 
+### Session 5 — data lifecycle and operations
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/me/exports` | self | unexpired exports (metadata only) |
+| POST | `/me/exports` | self, 1 per 10 min (429) | builds an encrypted JSON export; returns `downloadPath` with a one-time-shown token; expires in 24 h |
+| GET | `/me/exports/:id/download?token=` | same signed-in user + token | `attachment`, `Cache-Control: no-store`; 404 for anyone else or a wrong token; 410 after expiry |
+| GET | `/me/deletion-blockers` | self | team organisations where the user is the only owner and others are members |
+| POST | `/me/deletion-request` | self + `{password}` | 202; emails a 1-hour single-use link; 409 with `details.blockers` if blocked; 403 for a wrong password |
+| POST | `/me/deletion-confirm` | same signed-in user + `{token, confirm:"DELETE"}` | irreversible erasure (DATA_LIFECYCLE.md §3); clears the cookie |
+| PATCH | `/organisations/:id` | owner/admin | `{name}` |
+| DELETE | `/organisations/:id` | owner, team orgs only | `{confirmName, password}` → scheduled deletion (hidden at once, purged after 30 days) |
+| GET | `/organisations/pending-deletion` | owners | restorable organisations |
+| POST | `/organisations/:id/restore` | owner | 204; 404 after the grace period |
+| GET | `/metrics` | `Authorization: Bearer METRICS_TOKEN` | Prometheus text; 404 when `METRICS_TOKEN` is unset |
+
+New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retry-After: 2`; nothing was saved) and **503 `REQUEST_TIMEOUT`** (handler exceeded `REQUEST_TIMEOUT_MS`; the change may have been saved — refresh before retrying). `invitation.emailSent` now means "queued for delivery".
+
 ## Not implemented (planned)
 Attachments (pre-signed object storage), saved views, custom fields, user databases, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.

@@ -37,6 +37,11 @@ User ─┬─< Session
 | `AutomationRule` (5) | Trigger → conditions → actions | composite FK to workspace; JSON validated by Zod before storage; `version`; soft delete; HMAC `webhookSecret` |
 | `AutomationRun` (5) | Execution log | unique (`ruleId`,`eventKey`) = idempotency claim; status, attempts, error, detail |
 
+| `EmailOutbox`, `EmailDeliveryAttempt` (session 5) | Durable email queue and per-attempt log | unique `idempotencyKey`; `payload` AES-256-GCM encrypted, nulled when final; status PENDING/SENDING/SENT/FAILED/EXPIRED; lease `lockedUntil`; RLS: system context only |
+| `DataExport` (session 5) | Personal data exports | gzip + AES-256-GCM `content`; SHA-256 `downloadTokenHash`; 24 h `expiresAt`; RLS: owner or system |
+| `organisations.deletionRequestedById`, `purgeAfter` (session 5) | Scheduled organisation deletion | `deletedAt` set → hidden; purged after `purgeAfter` |
+| `user_token_purpose` += `ACCOUNT_DELETION` | Emailed account-deletion confirmation | 1 h, single use |
+
 Search: `projects`, `tasks` and `documents` carry a generated `search` tsvector column with a GIN index (migrations 0006, 0008).
 
 ## 3. Rules
@@ -57,13 +62,13 @@ Search: `projects`, `tasks` and `documents` carry a generated `search` tsvector 
 | 5 (remaining) | `Integration`, `IntegrationToken` (encrypted), `Subscription`, `UsageCounter` (usage is currently counted live) |
 
 ## 5. Row-level security
-See ADR-009 and `drizzle/0003_row_level_security.sql`. RLS is enabled on every table that carries `organisation_id` or `workspace_id` (16 tables), except the two membership tables that the policy helper functions read. A guard test (`rls.e2e`) fails if a new tenant table is added without RLS. Policies: migrations 0003, 0005, 0008, 0011, 0014.
+See ADR-009 and `drizzle/0003_row_level_security.sql`. RLS is enabled on every table that carries `organisation_id` or `workspace_id` (16 tables), except the two membership tables that the policy helper functions read. A guard test (`rls.e2e`) fails if a new tenant table is added without RLS. Policies: migrations 0003, 0005, 0008, 0011, 0014, 0016 (email queue: system only), 0018 (exports: owner only). 19 tables have RLS.
 
 ## 6. Migrations
 `pnpm db:generate` (drizzle-kit) creates SQL from schema changes; the SQL is committed and reviewed; `pnpm db:migrate` applies it. Forward-only in production. Destructive changes use expand → migrate data → contract across releases.
 
 ## 7. Retention (MaintenanceService, hourly)
-Outbox events 7 days (live-update replay window); expired/revoked sessions 30 days after expiry; used/expired email tokens 7 days; automation runs 90 days. Activity history and audit logs are never pruned automatically. Deletes run in batches of 5,000.
+Outbox events 7 days (live-update replay window); expired/revoked sessions 30 days after expiry; used/expired email tokens 7 days; automation runs 90 days; finished email metadata 30 days; data exports at expiry (24 h); organisations whose deletion grace period (30 days) ended. Full rules: DATA_LIFECYCLE.md. Activity history and audit logs are never pruned automatically. Deletes run in batches of 5,000.
 
 ## 8. Backup & restore
-Target: managed Postgres with PITR (RPO ≤ 15 min). Logical backup drill: `infra/scripts/backup-restore-drill.sh` (pg_dump custom format → restore into a scratch DB → compares every table's row count, RLS-enabled tables, policies and the migration journal, then checks that the restricted role sees nothing without a user context). Run here on 31 Oct 2026 against the dev database: passed (22 tables, 16 with RLS, 15 migrations). Also runs in CI after e2e. A PITR restore on the managed provider has **not** been exercised (no provider chosen).
+Target: managed Postgres with PITR (RPO ≤ 15 min). Logical backup drill: `infra/scripts/backup-restore-drill.sh` (pg_dump custom format → restore into a scratch DB → compares every table's row count, RLS-enabled tables, policies and the migration journal, then checks that the restricted role sees nothing without a user context). Run here on 31 Oct 2026: passed (session 4: 22 tables, 16 with RLS, 15 migrations; session 5 on the e2e database: 25 tables, 19 with RLS, 19 migrations). Also runs in CI after e2e. A PITR restore on the managed provider has **not** been exercised (no provider chosen).

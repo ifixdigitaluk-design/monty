@@ -41,7 +41,17 @@ const TABLES = [
 export async function resetDb() {
   const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
   try {
-    await pool.query(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} CASCADE`);
+    // Background workers of the app under test (mail delivery, automations) may still be writing; TRUNCATE can
+    // deadlock with them. That is a test-harness race, so retry instead of failing the next test.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await pool.query(`TRUNCATE ${TABLES.map((t) => `"${t}"`).join(', ')} CASCADE`);
+        break;
+      } catch (err) {
+        if ((err as { code?: string }).code !== '40P01' || attempt >= 5) throw err;
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+      }
+    }
   } finally {
     await pool.end();
   }

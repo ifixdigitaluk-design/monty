@@ -1,6 +1,6 @@
 # Development Status (master record)
 
-Last updated: 31 Oct 2026 · Session 4 · Phases 2–6 built in part (see roadmap status column). Nothing is Production Ready.
+Last updated: 31 Oct 2026 · Session 5 · Private-beta hardening (email queue, timeouts, data lifecycle, accessibility, containers, observability). Nothing is Production Ready; see the private-beta checklist in RUNBOOKS.md §8.
 
 ## Status definitions
 - **Implemented**: code exists and builds.
@@ -55,8 +55,16 @@ Implementation status and verification status are recorded separately below.
 | O-02 | Load test script + baseline | Implemented | Executed | RUNBOOKS §7 (single 2-vCPU host) |
 | O-03 | Backup/restore drill script (also in CI) | Implemented | Executed locally | RUNBOOKS §4; CI step not yet run |
 | O-04 | Runbooks, alert definitions, launch checklist | Written | n/a | RUNBOOKS.md |
+| B-10 | Durable email queue: transactional outbox, encrypted bodies, retry with backoff, permanent failure, expiry, restart-safe, idempotent | Implemented | Tested | mail-queue.e2e (12) against a real local SMTP server; container restart check. **Real provider not verified** |
+| O-05 | Statement / idle-in-transaction / lock / pool / request timeouts, 503 mapping, connection recovery | Implemented | Tested | db-timeouts.e2e (10) |
+| L-01 | Personal data export (encrypted, expiring, session + token) | Implemented | Verified | data-lifecycle.e2e; Playwright |
+| L-02 | Account deletion with emailed confirmation, anonymisation and audit scrubbing | Implemented | Verified | data-lifecycle.e2e; Playwright |
+| L-03 | Organisation rename; scheduled deletion, restore, purge | Implemented | Verified | data-lifecycle.e2e; Playwright |
+| A-01 | Accessible calendar (WAI-ARIA date grid, keyboard), main landmarks/headings; axe regression test | Implemented | Verified | accessibility.spec: 0 axe violations on 14 page states; keyboard test. No manual screen-reader test |
+| O-06 | Dockerfile (api/web/migrate), compose | Implemented | Run locally on a substitute base image | official base image + compose up **not verified** |
+| O-07 | Prometheus metrics, error-reporting webhook hook, job/email/automation monitoring | Implemented | Tested | observability.e2e; scraped from a container. **No monitoring service connected** |
 
-Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, labels, attachments, custom fields, saved views, user databases, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
+Not started: Redis rate limiting (B-07), MFA, labels, attachments, custom fields, saved views, user databases, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
 
 ## Session 1 report
 
@@ -222,3 +230,73 @@ Not started: Redis rate limiting (B-07), email outbox with retries (B-10), MFA, 
     - Durable outbox relay for automations.
     - Windows/macOS desktop builds with signing.
     - Pen test and legal review before any launch.
+
+## Session 5 report (private-beta hardening)
+
+1. **Inspected**:
+   - Mail, auth and member services.
+   - The DB service, filters and config.
+   - The calendar and page landmarks.
+   - The FK cascade graph for organisation purge.
+   - The Docker daemon. It was startable, but every container registry is blocked (Docker Hub, ECR, GCR, GHCR and Quay all returned 403). I built a substitute Ubuntu 24.04 + Node 22.23 base with debootstrap from the Ubuntu archive.
+   - GitHub: creating a repository is blocked for this session.
+   - All work is on branch `beta-readiness`.
+2. **Developed (one commit per priority)**:
+   - P1: durable email queue.
+   - P2: timeouts.
+   - P3: data lifecycle (rules in DATA_LIFECYCLE.md).
+   - P4: accessibility.
+   - P5: containers and compose.
+   - P6: metrics, error reporting and job monitoring.
+3. **Files**:
+   - New:
+     - `apps/api/src/{common/encryption.ts, common/db-errors.ts, account/*, observability/*}`
+     - `apps/web/src/app/{settings/account, account/delete}/page.tsx`
+     - `Dockerfile`, `.dockerignore`, `compose.yaml`, `infra/docker/*`
+     - `docs/DATA_LIFECYCLE.md`
+     - API tests: `mail-queue`, `db-timeouts`, `data-lifecycle`, `observability`
+     - e2e tests: `accessibility`, `data-lifecycle`
+     - Test SMTP server: `apps/api/test/smtp-test-server.ts`
+   - Modified:
+     - Mail service and transports, account recovery, members service
+     - DB service, config, app factory, `main.ts`, exception filter, logging, realtime (extra NOTIFY channels), maintenance, automations
+     - Calendar, AuthForm, CenteredCard, invite/docs/project pages, AppShell, organisation page
+     - api-client, validation, package manifests (`files`; `pg` moved to API dependencies), `next.config` (optional standalone output)
+     - CI workflow, docs
+4. **Migrations**:
+   - `0015_email_outbox`
+   - `0016_email_outbox_rls`
+   - `0017_data_lifecycle` (data_exports, organisation deletion columns, ACCOUNT_DELETION token purpose)
+   - `0018_data_lifecycle_rls`
+
+   All are additive. They were applied to dev, test, e2e and a fresh container database.
+5. **Tests executed** (31 Oct 2026):
+   - `pnpm build`, `pnpm typecheck` and `pnpm lint` → exit 0
+   - `pnpm audit --prod` → clean
+   - `pnpm test` → domain 40/40, validation 8/8, editor 2/2, API 154/154 (17 files). The full API suite was run twice consecutively and passed both times.
+   - `pnpm e2e` → 18 passed, 1 skipped (screenshot helper)
+   - Backup/restore drill → passed (25 tables, 19 with RLS, 19 migrations)
+   - Containers (production mode, substitute base): healthy, register via web proxy, `Secure` cookie, read-only FS, UID 10001, metrics, graceful SIGTERM (~0.1 s), email queue persisted across restart
+6. **Previously passing tests**:
+   - All earlier API (120) and Playwright (15) tests still pass.
+   - `account-recovery` tests now wait for the queue, because email is no longer sent inline.
+   - One production-config assertion now supplies the newly required `DATA_ENCRYPTION_KEY`.
+7. **Failed during the session and fixed**:
+   - **Shutdown order:** the mail worker used the pool after it was closed. Fixed by closing the pool in `onApplicationShutdown`.
+   - **Idle-transaction error lost:** drizzle surfaced the rollback failure rather than the original error. Fixed by classifying "not queryable".
+   - **Test race:** a test-harness TRUNCATE deadlocked with an in-flight mail worker. Fixed with a retry in `resetDb`; this was not a product bug.
+   - **Missing runtime dependency:** `pg` was a dev-only dependency of the API, so the container would have lacked it at runtime.
+   - **Docker build:** the `# syntax` directive needed a registry pull.
+   - Minor test expectations.
+8. **Outstanding**: see the RUNBOOKS §8 checklist. Main local gaps:
+   - Redis for running more than one instance
+   - CSP nonces
+   - Sign-up enumeration
+   - MFA
+   - Manual screen-reader testing
+   - `DATA_ENCRYPTION_KEY` rotation
+9. **Risks**:
+   - **Email delivery** is at least once, so a crash can cause one duplicate send.
+   - **Late commits:** a `REQUEST_TIMEOUT` answer can coexist with a late commit (the user is told to refresh).
+   - **Images built on a substitute base:** they were built and run on a different base distro than the official image.
+   - **Retention periods** for audit and activity data need legal confirmation.

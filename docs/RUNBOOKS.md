@@ -2,21 +2,42 @@
 
 Written for the Stage 1 target (API containers ×2+, Next.js web, managed Postgres 16). Procedures marked **(drilled)** were executed in this repository's environment; the rest are written but not yet exercised on real infrastructure.
 
-## 1. Health, readiness and what to alert on
-| Signal | Where | Alert when |
-|---|---|---|
-| Liveness | `GET /api/v1/health` (DB `select 1`) | any non-200 for 2 min |
-| Readiness | `GET /api/v1/health/ready` | 503 for > 2 min on any instance (DB or LISTEN connection down) — the LB should already drain it |
-| Error rate | JSON logs, `status >= 500` | > 1 % of requests over 5 min |
-| Latency | JSON logs `ms` field | p95 > 500 ms for 10 min (baseline below) |
-| `rls_inactive` / startup failure "Row-level security is NOT effective" | logs | ever — page immediately |
-| `audit_write_failed`, `maintenance_failed`, `automation_error`, `listener_error` | logs | any occurrence (ticket); sustained (page) |
-| `ai_plan_failed` | logs | > 5 in 10 min (provider outage or key problem) |
-| Automation runs `FAILED` | `automation_runs.status` | spikes per workspace (customer webhook down) — informational |
-| Postgres connections | provider metrics | > 80 % of `max_connections` |
-| Disk / replication lag / backup age | provider metrics | backup older than 26 h; PITR disabled |
+## 1. Health, metrics and alerts
+**What exists in the code (tested locally):**
+| Signal | Where |
+|---|---|
+| Liveness | `GET /api/v1/health` checks the DB (`select 1`). Used by the container `HEALTHCHECK` for web (`/login`). |
+| Readiness | `GET /api/v1/health/ready` returns 503 unless the DB **and** the live-update LISTEN connection are up. Used by the API container `HEALTHCHECK`. |
+| Metrics | `GET /api/v1/metrics` in Prometheus text format. It is off unless `METRICS_TOKEN` is set, and requires `Authorization: Bearer <token>`. It contains counts and timings only, with no ids, emails or content. |
+| Structured logs | JSON lines on stdout/stderr: `time`, `level`, `context`, `msg`, `requestId`, `durationMs`. No tokens, passwords, query strings or email bodies. |
+| Error reporting | Every unhandled error is written to the log (`unhandled_error`) and counted in `monty_errors_total`. Optionally, each one is also POSTed to `ERROR_WEBHOOK_URL` (rate-limited to 30/min, no bodies, cookies or queries). This is a vendor-neutral integration point. |
 
-No metrics exporter or error tracker is wired in yet; until then the above are log-based queries.
+**Suggested alert rules** (PromQL). They are defined here but **not active anywhere**: no monitoring provider has been configured.
+| Alert | Expression | Severity |
+|---|---|---|
+| API down | `up{job="monty-api"} == 0` for 2 m, or readiness 503 for 2 m | page |
+| Database unreachable | `monty_db_up == 0` for 2 m | page |
+| Pool saturation | `monty_db_pool_waiting_requests > 0` for 5 m | page |
+| 5xx rate | `sum(rate(monty_http_requests_total{status="5xx"}[5m])) / sum(rate(monty_http_requests_total[5m])) > 0.01` | page |
+| Slow requests | `histogram_quantile(0.95, sum by (le) (rate(monty_http_request_duration_seconds_bucket[10m]))) > 0.5` | ticket |
+| DB busy / timeouts | `increase(monty_db_unavailable_total[10m]) > 10`, or `increase(monty_request_timeouts_total[10m]) > 5` | ticket |
+| Live updates broken | `monty_realtime_listener_up == 0` for 2 m | page |
+| Email backlog | `monty_email_overdue_messages > 0` for 15 m | page (sign-ups can't verify) |
+| Email failures | `increase(monty_email_failed_last_24h[1h]) > 5` | ticket |
+| Mail worker stalled | `time() - monty_job_last_success_timestamp_seconds{job="mail_delivery"} > 300` | page |
+| Maintenance stalled | `time() - monty_job_last_success_timestamp_seconds{job="maintenance"} > 7200` | ticket |
+| Automation failures | `monty_automation_runs_failed{window="1h"} > 20` or `monty_automation_runs_stuck > 0` | ticket |
+| Unhandled errors | `increase(monty_errors_total[10m]) > 5` | ticket |
+| Event loop lag | `monty_event_loop_delay_p99_seconds > 0.2` | ticket |
+
+**What you need to provide** (all **Requires external provider**):
+- A metrics backend that can scrape HTTP. Any Prometheus-compatible service or a self-hosted Prometheus with Alertmanager. You also need a `METRICS_TOKEN` stored as a secret.
+- An error tracker with a webhook or HTTP intake that accepts JSON, set as `ERROR_WEBHOOK_URL`. Alternatively, an SDK swapped into `ErrorReporter.deliver`.
+- A log platform that collects container stdout. Target retention is 30 days.
+- An uptime checker hitting `/api/v1/health/ready` from outside.
+- A paging channel: an on-call tool, or email/SMS.
+
+Metrics are per instance, so scrape every API instance.
 
 ## 2. Deploy and roll back
 1. Build images from a green CI commit (`API_INTERNAL_URL` must be set at web build time).
@@ -47,10 +68,31 @@ No metrics exporter or error tracker is wired in yet; until then the above are l
 - **Data exposure concern between tenants**: confirm RLS is active (`rls_active` log line at startup), run `pnpm --filter @monty/api test -- rls`, then review the affected endpoint's permission checks.
 
 ## 6. Feature-specific
-- **Email not arriving**: check logs for the mail type and recipient domain; verify SPF/DKIM/DMARC; invitations remain usable via the copyable link. Password-reset requests always return 200 by design.
+- **Email not arriving**: the queue is durable.
+  - **Find the message:** query `email_outbox` (as the owner role) by `kind`/`status`; `last_error` holds the provider's reason and `email_delivery_attempts` holds every attempt.
+  - **Temporary failures** (network, SMTP 4xx, authentication) retry with exponential backoff: 30 s doubling, capped at 1 h, 10 attempts, about 4.5 h in total.
+  - **Permanent failures** (SMTP 5xx) stop immediately.
+  - **Expired links** become `EXPIRED` (reset links are never sent after 1 h).
+  - **Re-queue after a provider outage:** `update email_outbox set status='PENDING', attempts=0, next_attempt_at=now() where status='FAILED' and payload is not null` (bodies are wiped once final, so only messages that still have a payload can be re-sent; otherwise users resend from the app).
+  - **Also:** verify SPF/DKIM/DMARC.
+  - **Delivery guarantee:** at least once. A crash after the provider accepted a message causes one resend with the same Message-ID.
 - **AI planning failing**: `ai_plan_failed` logs carry the provider error. Set `AI_PROVIDER=local` to fall back to the built-in planner without data leaving the server.
 - **Automation not firing**: check the rule is enabled and its author is still a workspace admin (runs show `SKIPPED` with the reason); webhook failures show the HTTP status or "non-public address". Changes made while no API instance was running are not processed (known limitation).
-- **Table growth**: MaintenanceService purges outbox (7 d), stale sessions (30 d), used tokens (7 d) and automation runs (90 d) hourly; check for `maintenance_done` log lines.
+- **Table growth**: MaintenanceService runs hourly and purges:
+  - the live-update outbox after 7 days;
+  - stale sessions after 30 days;
+  - used tokens after 7 days;
+  - automation runs after 90 days;
+  - finished email metadata after 30 days;
+  - expired exports;
+  - organisations whose 30-day deletion grace period has ended.
+
+  Check for `maintenance_done` log lines, or `monty_job_last_success_timestamp_seconds{job="maintenance"}`.
+- **Account / organisation deletion requests**: see DATA_LIFECYCLE.md. Restoring an organisation after its purge is impossible except from a database backup.
+- **503 SERVICE_UNAVAILABLE / REQUEST_TIMEOUT spikes**: look at `db_unavailable` log reasons.
+  - `pool_timeout` → raise `DB_POOL_MAX`, or add instances or PgBouncer.
+  - `lock_timeout` → find blockers in `pg_locks`.
+  - `statement_timeout` → `pg_stat_statements`.
 
 ## 7. Load test baseline **(run 31 Oct 2026)**
 `infra/scripts/load-test.mjs`, 20 users each with a project of 25+ tasks, mix: list tasks 40 %, home 20 %, search 15 %, update 15 %, create 10 %. Single API instance (`DB_POOL_MAX=20`), Postgres and the load generator **all on the same 2-vCPU container**, so absolute numbers are a floor, not a capacity statement.
@@ -65,17 +107,29 @@ No metrics exporter or error tracker is wired in yet; until then the above are l
 - Search returned 429 after 120 requests/min because all virtual users share one IP: the per-IP limit works, but would also throttle a real office behind one NAT (see SECURITY_PLAN §3).
 - Not yet measured: multiple instances, a separate DB host, SSE connection counts, large tenants (100k+ tasks).
 
-## 8. Launch checklist (status)
-| Item | Status |
-|---|---|
-| CI green on GitHub | ✗ repository not pushed from this environment |
-| External penetration test | ✗ |
-| Real SMTP provider verified with one test email | ✗ (no credentials) |
-| Hosted AI provider verified (if enabled) | ✗ (no key) |
-| PITR restore drill on chosen provider | ✗ |
-| Logical restore drill | ✓ |
-| Load test baseline | ✓ (single small host) |
-| Monitoring alerts configured | ✗ (defined above, not set up) |
-| Desktop builds signed for Windows/macOS | ✗ (Linux build only, unsigned) |
-| Legal: privacy policy, terms, DPA, GDPR review | ✗ needs qualified advice |
-| Pricing | ✗ not decided (limits are placeholders) |
+## 8. Private-beta readiness checklist (updated 31 Oct 2026, session 5)
+Statuses: **Completed and tested** · **Implemented but externally unverified** · **Requires my action** (founder) · **Requires external provider** · **Requires legal review** · **Not completed**.
+
+| Item | Status | Evidence / what's missing |
+|---|---|---|
+| Durable email queue with retries, backoff, permanent-failure handling, restart survival | Completed and tested | `mail-queue.e2e` (real local SMTP server: success, 451 retry, 550, unreachable, restart, crashed-worker lease, idempotency, expiry, RLS); container restart kept the queued email |
+| Real email delivery through a provider (incl. SPF/DKIM/DMARC) | Requires external provider | No SMTP credentials here; the production TLS check rejects the local test server by design |
+| Database/statement/lock/idle/pool/request timeouts | Completed and tested | `db-timeouts.e2e` (10 tests); values documented in DEPLOYMENT_GUIDE |
+| Personal data export, account deletion, organisation rename/deletion/restore/purge | Completed and tested | `data-lifecycle.e2e` (7 tests) + Playwright `data-lifecycle.spec` |
+| Retention and deletion rules reviewed by a privacy professional | Requires legal review | DATA_LIFECYCLE.md is an engineering proposal |
+| Privacy policy, terms, DPA, sub-processor list, cookie notice | Requires legal review | Not written |
+| Calendar and page accessibility (axe, keyboard) | Completed and tested | `accessibility.spec`: 0 violations on 14 page states incl. phone width; keyboard grid test. Manual screen-reader testing (NVDA/VoiceOver) not done |
+| Container images (api, web, migrate), non-root, read-only, health checks, graceful shutdown | Implemented but externally unverified | Built and run here with a **locally built Ubuntu 24.04 + Node 22.23 substitute base**, because Docker Hub is blocked. The official `node:22-bookworm-slim` build is in CI but not yet run |
+| `compose.yaml` full stack (with official `postgres:16` image) | Implemented but externally unverified | `docker compose config` validated; `up` not run (images can't be pulled here) |
+| Metrics endpoint, error-reporting hook, job/email/automation monitoring | Implemented but externally unverified | `observability.e2e`; scraped from a production-mode container. No monitoring service is connected, so **no alert is active** |
+| Monitoring stack, alert routing, uptime checks, log retention | Requires external provider | See §1 |
+| Hosting, TLS certificates, domain, managed Postgres with PITR | Requires external provider / my action | No provider chosen |
+| PITR restore drill on the chosen provider | Requires external provider | The logical restore drill passed locally |
+| CI green on GitHub (tests, e2e, restore drill, image build) | Requires my action | Repository not pushed; create `ifixdigitaluk-design/monty` and connect it, or push the bundle |
+| External penetration test | Requires external provider | |
+| Hosted AI provider check (if enabled) | Requires external provider | Needs an `AI_API_KEY`; the default local planner works without it |
+| Shared rate limits / presence for >1 API instance (Redis) | Not completed | Run a single API instance for the beta, or add Redis |
+| CSP nonces (remove `'unsafe-inline'`), sign-up enumeration fix, MFA | Not completed | |
+| Desktop app signed builds (Windows/macOS) | Not completed | Linux unsigned build only; not needed for a web beta |
+| Pricing and billing | Requires my action | Plan limits are placeholders |
+| Load test baseline | Completed and tested | Single small host (§7); repeat on the target hosting |
