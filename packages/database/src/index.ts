@@ -48,7 +48,14 @@ export function createDb(connectionString: string, opts: DbOptions = {}): DbHand
     ...(opts.lockTimeoutMs ? { lock_timeout: opts.lockTimeoutMs } : {}),
     keepAlive: true,
   });
-  pool.on('error', (err) => (opts.onPoolError ? opts.onPoolError(err) : undefined));
+  // Every connection gets one permanent error listener. pg-pool only listens while a client is idle, so a client that
+  // is checked out (mid-transaction) when the server terminates it — idle_in_transaction_session_timeout, restart,
+  // failover — would otherwise emit 'error' with no listener: an uncaught exception that kills the process.
+  // The in-flight query still rejects (the request gets a 503) and the pool discards the broken client.
+  pool.on('connect', (client) => client.on('error', (err) => opts.onPoolError?.(err)));
+  // Idle-client errors are re-emitted on the pool; they were already reported by the listener above, so this one
+  // only exists to keep the emit from throwing.
+  pool.on('error', () => undefined);
   const db = drizzle(pool, { schema });
   return { db, pool, close: () => pool.end() };
 }

@@ -31,14 +31,13 @@ export class OrganisationsService {
     if (memberships.length === 0) return [];
 
     const orgIds = memberships.map((m) => m.org.id);
-    const [wsRows, wsMemberships] = await Promise.all([
-      db
-        .select()
-        .from(workspaces)
-        .where(and(inArray(workspaces.organisationId, orgIds), isNull(workspaces.deletedAt)))
-        .orderBy(asc(workspaces.createdAt)),
-      db.select().from(workspaceMemberships).where(eq(workspaceMemberships.userId, userId)),
-    ]);
+    // Sequential on purpose: inside a request transaction all queries share one connection (no parallel queries).
+    const wsRows = await db
+      .select()
+      .from(workspaces)
+      .where(and(inArray(workspaces.organisationId, orgIds), isNull(workspaces.deletedAt)))
+      .orderBy(asc(workspaces.createdAt));
+    const wsMemberships = await db.select().from(workspaceMemberships).where(eq(workspaceMemberships.userId, userId));
     const wsRole = new Map(wsMemberships.map((m) => [m.workspaceId, m.role]));
 
     return memberships

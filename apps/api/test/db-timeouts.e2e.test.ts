@@ -160,3 +160,32 @@ describe('database and request timeouts', () => {
     expect(transientDbFailure(new Error('duplicate key'))).toBeNull();
   });
 });
+
+describe('connections terminated while checked out (regression: CI run on ad3d0bb)', () => {
+  it('a session killed mid-transaction rejects the query and never becomes an uncaught exception', async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (err: unknown) => uncaught.push(err);
+    process.on('uncaughtException', onUncaught);
+    try {
+      const a = await appWith({});
+      const dbs = a.get(DbService);
+      const err = await dbs
+        .runAsSystem(async () => {
+          const pid = (await dbs.db.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`)).rows[0]!.pid;
+          // Another session of the same role kills this one while its transaction is open (like a failover would).
+          const killer = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+          await killer.query('select pg_terminate_backend($1)', [pid]);
+          await killer.end();
+          await new Promise((r) => setTimeout(r, 200)); // the FATAL arrives while the client is still checked out
+          await dbs.db.execute(sql`select 1`);
+        })
+        .catch((e) => e);
+      expect(transientDbFailure(err)).toBe('connection_lost');
+      await new Promise((r) => setTimeout(r, 200));
+      expect(uncaught).toEqual([]);
+      expect((await dbs.runAsSystem(() => dbs.db.execute(sql`select 3 as ok`))).rows[0]).toEqual({ ok: 3 });
+    } finally {
+      process.off('uncaughtException', onUncaught);
+    }
+  });
+});

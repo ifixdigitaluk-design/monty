@@ -22,20 +22,19 @@ export class EntitlementsService {
 
   async usage(organisationId: string): Promise<Record<LimitKey, number>> {
     const db = this.dbs.db;
-    const count = async (q: Promise<{ n: number }[]>) => (await q)[0]?.n ?? 0;
+    const count = async (q: PromiseLike<{ n: number }[]>) => (await q)[0]?.n ?? 0;
     const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-    const [projectsN, membersN, pendingN, aiN, rulesN] = await Promise.all([
-      count(db.select({ n: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.organisationId, organisationId), isNull(projects.deletedAt)))),
-      count(db.select({ n: sql<number>`count(*)::int` }).from(organisationMemberships).where(eq(organisationMemberships.organisationId, organisationId))),
-      count(
-        db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(invitations)
-          .where(and(eq(invitations.organisationId, organisationId), isNull(invitations.acceptedAt), isNull(invitations.revokedAt), gte(invitations.expiresAt, new Date()))),
-      ),
-      count(db.select({ n: sql<number>`count(*)::int` }).from(aiProposals).where(and(eq(aiProposals.organisationId, organisationId), gte(aiProposals.createdAt, monthStart)))),
-      this.countAutomationRules(organisationId),
-    ]);
+    // Sequential on purpose: inside a request transaction all queries share one connection (no parallel queries).
+    const projectsN = await count(db.select({ n: sql<number>`count(*)::int` }).from(projects).where(and(eq(projects.organisationId, organisationId), isNull(projects.deletedAt))));
+    const membersN = await count(db.select({ n: sql<number>`count(*)::int` }).from(organisationMemberships).where(eq(organisationMemberships.organisationId, organisationId)));
+    const pendingN = await count(
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(invitations)
+        .where(and(eq(invitations.organisationId, organisationId), isNull(invitations.acceptedAt), isNull(invitations.revokedAt), gte(invitations.expiresAt, new Date()))),
+    );
+    const aiN = await count(db.select({ n: sql<number>`count(*)::int` }).from(aiProposals).where(and(eq(aiProposals.organisationId, organisationId), gte(aiProposals.createdAt, monthStart))));
+    const rulesN = await this.countAutomationRules(organisationId);
     return { projects: projectsN, members: membersN + pendingN, aiRequestsPerMonth: aiN, automationRules: rulesN };
   }
 
