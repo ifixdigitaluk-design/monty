@@ -1,0 +1,27 @@
+import { createApp } from './app.factory';
+import { getConfig } from './config';
+import { errorReporter } from './observability/error-reporter';
+
+// Last-resort reporting: an unexpected rejection is reported and logged; an uncaught exception also ends the
+// process (state may be corrupt) so the orchestrator restarts it.
+process.on('unhandledRejection', (reason) => errorReporter()?.report({ error: reason, source: 'process' }));
+process.on('uncaughtException', (err) => {
+  errorReporter()?.report({ error: err, source: 'process' });
+  setTimeout(() => process.exit(1), 500).unref();
+});
+
+async function main() {
+  const app = await createApp();
+  const { port, timeouts } = getConfig();
+  await app.listen(port);
+  const server = app.getHttpServer() as import('node:http').Server;
+  server.headersTimeout = 20_000; // slowloris protection: request headers must arrive within 20 s
+  server.requestTimeout = timeouts.requestMs + 5_000; // whole request body must arrive in time
+  server.keepAliveTimeout = 65_000; // longer than typical load-balancer idle timeouts (60 s) to avoid 502s
+  process.stdout.write(JSON.stringify({ level: 'info', msg: 'api_listening', port }) + '\n');
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

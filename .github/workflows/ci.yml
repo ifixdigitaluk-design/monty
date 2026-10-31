@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monty
+          POSTGRES_PASSWORD: monty_dev
+          POSTGRES_DB: monty_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U monty" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MIGRATION_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      TEST_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_test
+      TEST_APP_DATABASE_URL: postgresql://monty_app:monty_app_dev@localhost:5432/monty_test
+      E2E_DATABASE_URL: postgresql://monty:monty_dev@localhost:5432/monty_e2e
+      E2E_APP_DATABASE_URL: postgresql://monty_app:monty_app_dev@localhost:5432/monty_e2e
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create runtime role and e2e database (before migrations, so grants apply)
+        env:
+          PGPASSWORD: monty_dev
+        run: |
+          psql -h localhost -U monty -d monty_test -c "CREATE ROLE monty_app LOGIN PASSWORD 'monty_app_dev' NOSUPERUSER NOBYPASSRLS"
+          psql -h localhost -U monty -d monty_test -c 'CREATE DATABASE monty_e2e'
+          for db in monty_test monty_e2e; do psql -h localhost -U monty -d $db -c 'GRANT CONNECT ON DATABASE '$db' TO monty_app; GRANT USAGE ON SCHEMA public TO monty_app'; done
+      - run: pnpm audit --prod
+      - name: Build (web build points its /api proxy at the e2e API port)
+        run: API_INTERNAL_URL=http://localhost:4100 pnpm build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @monty/e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - name: Backup/restore drill (dump the e2e database, restore, verify counts, RLS and migrations)
+        run: |
+          # pg_dump must be >= the server version (16); the runner's default client may be older.
+          sudo apt-get install -y postgresql-common >/dev/null && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y postgresql-client-16 >/dev/null
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          SOURCE_URL=$E2E_DATABASE_URL ADMIN_URL=postgresql://monty:monty_dev@localhost:5432/postgres \
+          APP_ROLE_URL_TEMPLATE='postgresql://monty_app:monty_app_dev@localhost:5432/{db}' \
+          bash infra/scripts/backup-restore-drill.sh
+      - name: Build production container images (official node base image)
+        run: |
+          docker build --target api -t monty-api:ci .
+          docker build --target web --build-arg API_INTERNAL_URL=http://api:4000 -t monty-web:ci .
+          docker run --rm --entrypoint id monty-api:ci | grep -q 'uid=10001'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/test-results

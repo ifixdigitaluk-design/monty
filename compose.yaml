@@ -1,0 +1,91 @@
+# Production-like local stack. Not a public deployment: every port binds to 127.0.0.1 only.
+#   cp infra/docker/.env.example infra/docker/.env   # then fill in secrets
+#   docker compose --env-file infra/docker/.env up --build
+# See docs/DEPLOYMENT_GUIDE.md "Containers".
+name: monty
+
+x-api-env: &api-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://monty_app:${MONTY_APP_DB_PASSWORD:?set MONTY_APP_DB_PASSWORD}@postgres:5432/monty
+  REQUIRE_RLS: "true"
+  APP_URL: ${APP_URL:-https://monty.localhost}
+  ALLOWED_ORIGINS: ${APP_URL:-https://monty.localhost}
+  TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
+  DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY (openssl rand -base64 32)}
+  MAIL_TRANSPORT: smtp
+  MAIL_FROM: ${MAIL_FROM:-Monty <no-reply@example.com>}
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  AI_PROVIDER: ${AI_PROVIDER:-local}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_MODEL: ${AI_MODEL:-}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+  ERROR_WEBHOOK_URL: ${ERROR_WEBHOOK_URL:-}
+  DB_POOL_MAX: ${DB_POOL_MAX:-10}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.10-bookworm}
+    environment:
+      POSTGRES_USER: monty
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: monty
+      MONTY_APP_DB_PASSWORD: ${MONTY_APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data # persistent: survives container rebuilds; back it up (RUNBOOKS §4)
+      - ./infra/docker/init-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monty -d monty"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    image: monty-api:${MONTY_TAG:-local}
+    build: { context: ., target: api }
+    command: ["node", "node_modules/@monty/database/dist/migrate-cli.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgresql://monty:${POSTGRES_PASSWORD}@postgres:5432/monty
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    image: monty-api:${MONTY_TAG:-local}
+    build: { context: ., target: api }
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    ports: ["127.0.0.1:4000:4000"]
+    restart: unless-stopped
+
+  web:
+    image: monty-web:${MONTY_TAG:-local}
+    build:
+      context: .
+      target: web
+      args: { API_INTERNAL_URL: "http://api:4000" }
+    depends_on:
+      api: { condition: service_healthy }
+    init: true
+    read_only: true
+    tmpfs: [/tmp, /app/apps/web/.next/cache]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    ports: ["127.0.0.1:3000:3000"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
