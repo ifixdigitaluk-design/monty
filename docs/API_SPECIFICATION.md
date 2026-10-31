@@ -130,6 +130,9 @@ New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retr
 | POST | `/auth/login/mfa` | `{mfaToken, code}` or `{mfaToken, recoveryCode}` | challenge lasts 5 min, 5 attempts; a TOTP step can't be reused |
 | GET | `/auth/mfa` | self | `{enabled, enabledAt, recoveryCodesRemaining}` |
 | POST | `/auth/mfa/setup` · `/mfa/enable` · `/mfa/disable` · `/mfa/recovery-codes` | self + password (setup/disable/regenerate) and a current code | setup returns secret + QR (data URL); enable returns 10 recovery codes once |
+| GET | `/auth/providers` | public | `{google: boolean}` |
+| GET | `/auth/google/start?next=` | public | 302 to Google with `state`, `nonce`, PKCE S256; attempt sealed in an HttpOnly cookie (10 min, path `/api/v1/auth/google`) |
+| GET | `/auth/google/callback` | public (from Google) | verifies state, exchanges the code, checks the RS256 ID token (issuer, audience, expiry, nonce, `email_verified`, optional `GOOGLE_ALLOWED_DOMAINS`). 302 to `next` with a session; to `/login?mfa=…` for two-step accounts; to `/login?error=google_*` on failure. Links by Google subject, then by verified email; new accounts follow `SIGNUP_MODE` |
 | GET/POST | `/workspaces/:id/channels` | workspace member / `task.create` | public or private channels; list includes unread and mention counts |
 | POST | `/workspaces/:id/dms` | workspace member | opens (or reuses) a direct message with the given members |
 | PATCH | `/channels/:id` | channel creator or workspace admin | name, topic, archived |

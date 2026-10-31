@@ -25,6 +25,15 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
+      // Local OpenID provider standing in for Google (see apps/api/test/fake-oidc.mjs).
+      command: 'node apps/api/test/fake-oidc.mjs',
+      cwd: root,
+      url: 'http://127.0.0.1:4300/.well-known/openid-configuration',
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { FAKE_OIDC_PORT: '4300' },
+    },
+    {
       command: 'node packages/database/dist/migrate-cli.js && node apps/api/dist/main.js',
       cwd: root,
       url: 'http://localhost:4100/api/v1/health',
@@ -41,6 +50,9 @@ export default defineConfig({
         NODE_ENV: 'development',
         APP_URL: 'http://localhost:3100',
         MAIL_TRANSPORT: 'log',
+        GOOGLE_CLIENT_ID: 'test-client',
+        GOOGLE_CLIENT_SECRET: 'test-secret',
+        OIDC_ISSUER: 'http://127.0.0.1:4300',
       },
     },
     {

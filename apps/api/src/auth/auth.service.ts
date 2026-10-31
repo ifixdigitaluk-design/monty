@@ -72,20 +72,7 @@ export class AuthService implements OnModuleInit {
     }
     let user;
     try {
-      user = await this.dbs.db.transaction(async (tx) => {
-        const [u] = await tx.insert(users).values({ email: input.email, name: input.name, passwordHash }).returning();
-        // Row-level security: act as the new user for the rest of sign-up.
-        await this.dbs.setCurrentUser(tx, u!.id);
-        const [org] = await tx
-          .insert(organisations)
-          .values({ name: `${input.name}'s space`, slug: `personal-${randomSuffix(6)}`, kind: 'PERSONAL', personalOwnerId: u!.id })
-          .returning();
-        await tx.insert(organisationMemberships).values({ organisationId: org!.id, userId: u!.id, role: 'OWNER' });
-        const [ws] = await tx.insert(workspaces).values({ organisationId: org!.id, name: 'Personal', slug: 'personal' }).returning();
-        await tx.insert(workspaceMemberships).values({ workspaceId: ws!.id, userId: u!.id, role: 'ADMIN' });
-        await this.audit.record({ actorId: u!.id, action: 'auth.registered', targetType: 'user', targetId: u!.id, client: toClient(client) }, tx);
-        return u!;
-      });
+      user = await this.createAccount({ email: input.email, name: input.name, passwordHash }, client);
     } catch (err) {
       if (isUniqueViolation(err)) {
         // Lost a race with a concurrent sign-up for the same address: same outcome as "already exists".
@@ -95,6 +82,41 @@ export class AuthService implements OnModuleInit {
       throw err;
     }
     await this.recovery.sendVerification(user.id, input.next);
+  }
+
+  /** Creates a user with their personal organisation and workspace, atomically. `passwordHash: '!'` = no password. */
+  async createAccount(
+    input: { email: string; name: string; passwordHash: string; emailVerifiedAt?: Date; via?: string },
+    client: ClientInfo,
+  ): Promise<typeof users.$inferSelect> {
+    return this.dbs.db.transaction(async (tx) => {
+      const [u] = await tx
+        .insert(users)
+        .values({ email: input.email, name: input.name, passwordHash: input.passwordHash, emailVerifiedAt: input.emailVerifiedAt ?? null })
+        .returning();
+      // Row-level security: act as the new user for the rest of sign-up.
+      await this.dbs.setCurrentUser(tx, u!.id);
+      const [org] = await tx
+        .insert(organisations)
+        .values({ name: `${input.name}'s space`, slug: `personal-${randomSuffix(6)}`, kind: 'PERSONAL', personalOwnerId: u!.id })
+        .returning();
+      await tx.insert(organisationMemberships).values({ organisationId: org!.id, userId: u!.id, role: 'OWNER' });
+      const [ws] = await tx.insert(workspaces).values({ organisationId: org!.id, name: 'Personal', slug: 'personal' }).returning();
+      await tx.insert(workspaceMemberships).values({ workspaceId: ws!.id, userId: u!.id, role: 'ADMIN' });
+      await this.audit.record(
+        { actorId: u!.id, action: 'auth.registered', targetType: 'user', targetId: u!.id, ...(input.via ? { data: { via: input.via } } : {}), client: toClient(client) },
+        tx,
+      );
+      return u!;
+    });
+  }
+
+  /** Second-factor challenge (5 minutes) used by every sign-in method for accounts with two-factor on. */
+  async startMfaChallenge(userId: string, client: ClientInfo): Promise<string> {
+    const mfaToken = randomBytes(32).toString('base64url');
+    await this.dbs.db.insert(loginChallenges).values({ userId, tokenHash: hashToken(mfaToken), expiresAt: new Date(Date.now() + 5 * 60_000) });
+    await this.audit.recordSafely({ actorId: userId, action: 'auth.login_mfa_challenge', targetType: 'user', targetId: userId, client: toClient(client) });
+    return mfaToken;
   }
 
   private async notifyExisting(user: typeof users.$inferSelect, client: ClientInfo) {
@@ -107,7 +129,7 @@ export class AuthService implements OnModuleInit {
     await this.audit.recordSafely({ actorId: user.id, action: 'auth.register_existing_email', targetType: 'user', targetId: user.id, client: toClient(client) });
   }
 
-  private async signupAllowed(email: string): Promise<boolean> {
+  async signupAllowed(email: string): Promise<boolean> {
     if (this.config.signupMode === 'open') return true;
     return this.dbs.runAsSystem(async () => {
       const [anyUser] = await this.dbs.db.select({ id: users.id }).from(users).limit(1);
@@ -146,12 +168,7 @@ export class AuthService implements OnModuleInit {
       await this.recovery.sendVerification(user.id, undefined, { cooldown: true });
       throw new AppException(403, 'EMAIL_NOT_VERIFIED', 'Confirm your email address first. We’ve sent you a new link — it signs you in.');
     }
-    if (user.mfaEnabledAt) {
-      const mfaToken = randomBytes(32).toString('base64url');
-      await this.dbs.db.insert(loginChallenges).values({ userId: user.id, tokenHash: hashToken(mfaToken), expiresAt: new Date(Date.now() + 5 * 60_000) });
-      await this.audit.recordSafely({ actorId: user.id, action: 'auth.login_mfa_challenge', targetType: 'user', targetId: user.id, client: toClient(client) });
-      return { mfaToken };
-    }
+    if (user.mfaEnabledAt) return { mfaToken: await this.startMfaChallenge(user.id, client) };
     const token = await this.createSession(user.id, client);
     await this.audit.recordSafely({ actorId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id, client: toClient(client) });
     return { user: toUserDto(user), token };

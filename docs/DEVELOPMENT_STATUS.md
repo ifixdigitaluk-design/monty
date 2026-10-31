@@ -68,9 +68,10 @@ Implementation status and verification status are recorded separately below.
 | P-03 | Team chat: public/private channels, DMs, threads, @mentions, reactions, unread, search, live | Implemented | Verified | chat.e2e (5), realtime audience test; Playwright chat.spec (two browsers) |
 | P-04 | File attachments on tasks, documents and chat (content-sniffed types, sandboxed downloads, RLS, purge) | Implemented | Verified | files.e2e (4); Playwright attachments.spec. Files live on the server disk (`FILES_DIR` volume); **no malware scanning** |
 | P-05 | Notion-style databases: 8 field types, table and board views with saved filters/sorts/hidden fields, row pages, live updates, search, CSV import (Notion/spreadsheet) and export | Implemented | Verified | domain databases.test (14), databases.e2e (9), realtime test; Playwright databases.spec; axe scan of table, board and row page. **No relations, rollups or formulas; deleted databases/rows have no restore screen** |
+| P-07 | Google sign-in (OpenID Connect + PKCE; link by subject, then verified email; squatter passwords disabled; two-step still required; domain allowlist; invite-only respected) | Implemented | Verified (local provider) | google.e2e (13) against a local OIDC provider with real RS256 signing; Playwright google-sign-in.spec. **Not yet tried against real Google** (needs your OAuth client); may not work inside the Windows app's embedded browser |
 | P-06 | Oracle Cloud free-tier install kit (Caddy HTTPS, DuckDNS, backups), Windows app and download page workflows | Written | **Not run** | scripts pass shellcheck; GitHub workflows not yet run; not tried on a real Oracle VM or a Windows PC |
 
-Not started: Redis rate limiting (B-07), Google sign-in (in progress), labels, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
+Not started: Redis rate limiting (B-07), labels, Yjs collaborative editing, desktop offline cache and signed updates, AI assistant chat / summaries / risk detection, billing provider, integrations (GitHub, Google, Slack), analytics, monitoring stack.
 
 ## Session 1 report
 

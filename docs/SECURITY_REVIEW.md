@@ -41,6 +41,14 @@ API (NestJS), web app (Next.js), database (Postgres with row-level security), co
 - **Secrets:** none in the repository or images; a full-history scan before the repo went public found none.
 - **Dependencies:** `pnpm audit --prod` is clean.
 
+## Google sign-in (added in this round)
+- Authorization-code flow with PKCE (S256), random `state` and `nonce`. The attempt is sealed (AES-GCM) in an HttpOnly, SameSite=Lax cookie scoped to the callback path, and lasts 10 minutes.
+- ID token: RS256 only, keys from the provider's JWKS, and issuer, audience/azp, expiry, issue time and nonce all checked. Accounts are keyed on the stable `sub`, never the email alone. An unverified Google email is refused.
+- Linking to an existing account by email happens only when Google has verified that email. If the local account had never confirmed its address, its password is disabled and its sessions are ended, so a squatter can't keep access.
+- Two-step verification still applies. The 5-minute challenge travels in the redirect URL and is removed from the address bar at once. It only allows entering the second factor.
+- `next` is limited to same-site relative paths. Failures show only a short reason code; details go to the server log.
+- Tests: `google.e2e` covers tampered nonce, audience, issuer, signature and expiry, forged state, a missing cookie, code reuse, domain allowlist and invite-only mode.
+
 ## Known open items (accepted for an internal pilot)
 - The CSP still allows `'unsafe-inline'` scripts, because Next.js needs them for its inline bootstrap. Nonces are planned.
 - Rate limits are in memory per instance, so run one API instance or add Redis.

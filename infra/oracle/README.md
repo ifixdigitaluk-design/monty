@@ -26,6 +26,20 @@ This is about 30–45 minutes the first time. You need:
 
 Gmail sends up to about 500 recipients a day, and emails come from your Gmail address.
 
+## 3b. Google sign-in (optional, free)
+1. Go to <https://console.cloud.google.com/> → create a project (e.g. "Monty").
+2. **APIs & Services → OAuth consent screen**: choose **Internal** if your staff use Google Workspace (only your organisation can sign in), otherwise **External** and add your staff as test users.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → type **Web application**.
+4. Under **Authorised redirect URIs** add exactly: `https://YOUR-ADDRESS/api/v1/auth/google/callback` (your Monty address from step 2).
+5. Copy the **client ID** and **client secret**; the installer asks for them. Never paste the secret in chat or email.
+
+How it behaves:
+- A Google account whose email matches an existing Monty account is linked to it.
+- New people get an account only if invite-only mode allows it (first account, or a pending invitation).
+- Two-step verification still applies.
+- People who only use Google have no password. To set one (needed to turn on two-step verification or delete their account), they use **Forgot password**.
+- **The Windows app** shows Monty inside an embedded browser, and Google often blocks sign-in there. In the app, use email and password, or sign in through a normal browser.
+
 ## 4. Install
 ```bash
 ssh -i <your-key> ubuntu@<public-ip>

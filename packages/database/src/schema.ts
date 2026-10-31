@@ -893,6 +893,23 @@ export const databaseViews = pgTable(
   ],
 );
 
+/** External sign-in identities (Google). `subject` is the provider's stable user id, never the email. */
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    subject: text('subject').notNull(),
+    email: text('email').notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: ts('last_used_at'),
+  },
+  (t) => [uniqueIndex('user_identities_provider_subject_idx').on(t.provider, t.subject), index('user_identities_user_idx').on(t.userId)],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',

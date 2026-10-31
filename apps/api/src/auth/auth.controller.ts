@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
@@ -26,6 +26,10 @@ import { Auth, AuthContext, Public } from '../common/auth-context';
 import { UuidPipe, ZodPipe } from '../common/pipes';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
+import { GoogleService, GoogleSignInError } from './google.service';
+
+const OIDC_COOKIE = 'monty_oidc';
+const OIDC_COOKIE_PATH = '/api/v1/auth/google';
 
 const authThrottle = { default: { limit: () => getConfig().authRateLimit, ttl: 60_000 } };
 
@@ -36,7 +40,64 @@ export class AuthController {
     @Inject(CONFIG) private readonly config: AppConfig,
     private readonly recovery: AccountRecoveryService,
     private readonly mfa: MfaService,
+    private readonly google: GoogleService,
   ) {}
+
+  /** Which sign-in methods the server offers (the web app shows buttons accordingly). */
+  @Public()
+  @Get('providers')
+  providers() {
+    return { google: this.google.enabled };
+  }
+
+  /** Starts "Continue with Google": remembers state/nonce/PKCE in a sealed, short-lived cookie and redirects. */
+  @Public()
+  @Throttle(authThrottle)
+  @Get('google/start')
+  async googleStart(@Query('next') next: string | undefined, @Res() res: Response) {
+    if (!this.google.enabled) return res.redirect(302, '/login?error=google_failed');
+    try {
+      const { url, cookie } = await this.google.start(next);
+      res.cookie(OIDC_COOKIE, cookie, { httpOnly: true, sameSite: 'lax', secure: this.config.isProduction, path: OIDC_COOKIE_PATH, maxAge: 10 * 60_000 });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.redirect(302, url);
+    } catch (err) {
+      this.google.logFailure(err as Error);
+      return res.redirect(302, '/login?error=google_failed');
+    }
+  }
+
+  /** The provider returns here. Success → session cookie and the original destination; failure → sign-in page with a reason. */
+  @Public()
+  @Throttle(authThrottle)
+  @Get('google/callback')
+  async googleCallback(
+    @Query() query: { code?: string; state?: string; error?: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    res.clearCookie(OIDC_COOKIE, { path: OIDC_COOKIE_PATH, httpOnly: true, sameSite: 'lax', secure: this.config.isProduction });
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    try {
+      const sealed = (req.cookies as Record<string, string> | undefined)?.[OIDC_COOKIE];
+      const result = await this.google.callback(
+        { code: typeof query.code === 'string' ? query.code : undefined, state: typeof query.state === 'string' ? query.state : undefined, error: typeof query.error === 'string' ? query.error : undefined },
+        sealed,
+        clientInfo(req),
+      );
+      if ('mfaToken' in result) {
+        // The challenge only allows entering the second factor (5 minutes, 5 attempts); it is not a session.
+        const q = new URLSearchParams({ mfa: result.mfaToken, ...(result.next ? { next: result.next } : {}) });
+        return res.redirect(302, `/login?${q.toString()}`);
+      }
+      this.setCookie(res, result.token);
+      return res.redirect(302, result.next ?? '/home');
+    } catch (err) {
+      this.google.logFailure(err as Error);
+      return res.redirect(302, `/login?error=${err instanceof GoogleSignInError ? err.code : 'google_failed'}`);
+    }
+  }
 
   /** Always 202 with the same body, whether or not the email has an account. */
   @Public()

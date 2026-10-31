@@ -183,6 +183,13 @@
       "when": 1793463819797,
       "tag": "0025_databases_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793464825987,
+      "tag": "0026_user_identities",
+      "breakpoints": true
     }
   ]
 }

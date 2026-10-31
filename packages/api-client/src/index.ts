@@ -147,6 +147,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
       mfaRecoveryCodes: (code: string) => request<{ recoveryCodes: string[] }>('POST', '/auth/mfa/recovery-codes', { code }),
       logout: () => request<void>('POST', '/auth/logout'),
       me: () => request<{ user: UserDto }>('GET', '/auth/me'),
+      providers: () => request<{ google: boolean }>('GET', '/auth/providers'),
       sessions: () => request<{ sessions: SessionDto[] }>('GET', '/auth/sessions'),
       revokeSession: (id: string) => request<void>('DELETE', `/auth/sessions/${id}`),
       requestPasswordReset: (email: string) => request<{ message: string }>('POST', '/auth/password-reset', { email }),

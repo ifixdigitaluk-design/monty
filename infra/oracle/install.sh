@@ -53,6 +53,19 @@ gen DATA_ENCRYPTION_KEY "$(openssl rand -base64 32)"
 gen METRICS_TOKEN "$(openssl rand -hex 24)"
 gen SIGNUP_MODE invite
 gen AI_PROVIDER local
+if ! grep -qE '^GOOGLE_CLIENT_ID=' "$ENV_FILE"; then
+  echo "   Optional: \"Continue with Google\". Create an OAuth client first (see infra/oracle/README.md), or leave empty."
+  read -r -p "   Google OAuth client ID (leave empty to skip): " gid
+  echo "GOOGLE_CLIENT_ID=$gid" >> "$ENV_FILE"
+  if [ -n "$gid" ]; then
+    read -r -s -p "   Google OAuth client secret (input hidden): " gsec; echo
+    echo "GOOGLE_CLIENT_SECRET=$gsec" >> "$ENV_FILE"
+    read -r -p "   Only allow Google accounts from these domains (comma-separated, empty = any): " gdom
+    echo "GOOGLE_ALLOWED_DOMAINS=$gdom" >> "$ENV_FILE"
+  else
+    echo "GOOGLE_CLIENT_SECRET=" >> "$ENV_FILE"
+  fi
+fi
 echo "   Saved to $ENV_FILE (readable by root only). Back up DATA_ENCRYPTION_KEY somewhere safe."
 
 echo "== 4/6 DuckDNS (optional: keeps your free address pointing at this server)"

@@ -37,6 +37,7 @@ const TABLES = [
   'milestones',
   'invitations',
   'audit_logs',
+  'user_identities',
   'user_tokens',
   'outbox_events',
   'activity_events',

@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { MfaService } from './auth/mfa.service';
+import { GoogleService } from './auth/google.service';
 import { Public } from './common/auth-context';
 import { CsrfGuard, SessionGuard } from './common/guards';
 import { AppConfig, CONFIG } from './config';
@@ -113,6 +114,7 @@ export class AppModule {
         { provide: CONFIG, useValue: config },
         AuthService,
         MfaService,
+        GoogleService,
         AuditService,
         MailService,
         AccountRecoveryService,

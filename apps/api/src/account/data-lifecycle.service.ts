@@ -102,6 +102,7 @@ export class DataLifecycleService {
   private async collect(userId: string) {
     const q = <T>(query: ReturnType<typeof sql>) => this.dbs.db.execute<T & Record<string, unknown>>(query).then((r) => r.rows);
     const [user] = await q(sql`select id, email, name, email_verified_at, created_at from users where id = ${userId}`);
+    const signInMethods = await this.dbs.runAsSystem(() => q(sql`select provider, email, created_at, last_used_at from user_identities where user_id = ${userId}`));
     const sessions = await q(sql`select created_at, last_seen_at, expires_at, revoked_at, ip, user_agent from sessions where user_id = ${userId} order by created_at`);
     const organisations = await q(sql`
       select o.id, o.name, o.kind, m.role, m.created_at as joined_at from organisation_memberships m
@@ -135,6 +136,7 @@ export class DataLifecycleService {
       note:
         'Your account and the content you created or were assigned in organisations you still belong to. Content other people created, and organisations you have left, are not included.',
       account: user,
+      linkedSignIns: signInMethods,
       sessions,
       organisations,
       workspaceMemberships,
@@ -232,6 +234,7 @@ export class DataLifecycleService {
       // 3. Personal and security data.
       await db.execute(sql`delete from sessions where user_id = ${userId}`);
       await db.execute(sql`delete from user_tokens where user_id = ${userId}`);
+      await db.execute(sql`delete from user_identities where user_id = ${userId}`);
       await db.execute(sql`delete from login_challenges where user_id = ${userId}`);
       await db.execute(sql`delete from mfa_recovery_codes where user_id = ${userId}`);
       await db.execute(sql`delete from data_exports where user_id = ${userId}`);
