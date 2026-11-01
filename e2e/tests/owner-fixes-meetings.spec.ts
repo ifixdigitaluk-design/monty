@@ -3,7 +3,13 @@ import { teamWithProject } from '../helpers';
 
 test('owner fixes: chat channels manage/delete, database delete, plan change; meetings end to end', async ({ page, browser }) => {
   const { mia } = await teamWithProject(page, browser);
-  const nav = (p: typeof page, name: string) => p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name }).click();
+  // Wait until the destination page has replaced the old one. Chat, Databases and Meetings each have a select
+  // labelled "Workspace": acting on Chat's while the next page is still loading makes Chat change the URL, which
+  // cancels the navigation and leaves the test on Chat (seen in CI, where navigation is slower than the test).
+  const nav = async (p: typeof page, name: string) => {
+    await p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name }).click();
+    await expect(p).toHaveURL(new RegExp(`/${name.toLowerCase()}(\\?|$)`));
+  };
   page.on('dialog', (d) => void d.accept(d.type() === 'prompt' ? 'sales' : undefined));
 
   // Chat: two channels, delete one (typed confirmation).
@@ -23,7 +29,7 @@ test('owner fixes: chat channels manage/delete, database delete, plan change; me
 
   // Databases: visible delete.
   await nav(page, 'Databases');
-  await page.getByLabel('Workspace', { exact: true }).selectOption({ label: 'Studio · General' });
+  await page.getByRole('navigation', { name: 'Databases' }).getByLabel('Workspace', { exact: true }).selectOption({ label: 'Studio · General' });
   await page.getByRole('button', { name: 'New database' }).first().click();
   await page.getByRole('dialog', { name: 'New database' }).getByLabel('Name').fill('Temp');
   await page.getByRole('button', { name: 'Create database' }).click();
