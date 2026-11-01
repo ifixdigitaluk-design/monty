@@ -32,16 +32,19 @@ function Chat() {
     [organisations],
   );
   const ws = params.get('ws') ?? workspaces.find((w) => w.team)?.id ?? workspaces[0]?.id ?? null;
-  const channelId = params.get('c');
-  const threadId = params.get('t');
+  const urlChannelId = params.get('c');
   const [channels, setChannels] = useState<ChannelDto[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState<'channel' | 'dm' | null>(null);
   const [tick, setTick] = useState(0); // bumps on live events so the open conversation refetches
 
-  const lastGo = useRef<string | null>(null);
-  if (lastGo.current === `/chat?${params.toString()}`) lastGo.current = null; // landed; allow it again later
+  // The open channel is worked out, not pushed into the URL: if the one in the URL is missing (none chosen, deleted,
+  // access removed) we show the first channel. Navigating from an effect here could land after the user had already
+  // clicked away to another page and pull them back to Chat.
+  const urlChannelOk = !!urlChannelId && !!channels?.some((c) => c.id === urlChannelId);
+  const channelId = urlChannelOk ? urlChannelId : ((channels?.find((c) => c.isMember && c.kind !== 'dm' && !c.archived) ?? channels?.[0])?.id ?? null);
+  const threadId = urlChannelOk ? params.get('t') : null;
   const go = useCallback(
     (next: { ws?: string | null; c?: string | null; t?: string | null }) => {
       const q = new URLSearchParams();
@@ -51,12 +54,7 @@ function Chat() {
       if (w) q.set('ws', w);
       if (c) q.set('c', c);
       if (t) q.set('t', t);
-      const url = `/chat?${q.toString()}`;
-      // Don't queue the same replace twice while the URL catches up; a stale repeat can land after
-      // the user has already clicked away and pull them back to Chat.
-      if (url === lastGo.current) return;
-      lastGo.current = url;
-      router.replace(url);
+      router.replace(`/chat?${q.toString()}`);
     },
     [router, ws, channelId, threadId],
   );
@@ -81,15 +79,6 @@ function Chat() {
         .catch(() => setMembers([]));
   }, [ws, loadChannels]);
 
-  // Open the first channel (or the general one) when none is selected.
-  useEffect(() => {
-    if (!channels) return;
-    // Also move on when the open channel disappears (deleted, or access removed).
-    if (channelId && channels.some((c) => c.id === channelId)) return;
-    const first = channels.find((c) => c.isMember && c.kind !== 'dm' && !c.archived) ?? channels[0];
-    if (first) go({ c: first.id, t: null });
-    else if (channelId) go({ c: null, t: null });
-  }, [channels, channelId, go]);
 
   useLiveEvents(ws, null, {
     onChange: () => undefined,

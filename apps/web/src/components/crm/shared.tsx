@@ -135,6 +135,7 @@ export function Timeline({
     e.preventDefault();
     if (!subject.trim()) return;
     setBusy(true);
+    const sent = { subject, body, due };
     try {
       await api.crm.createActivity(workspaceId, {
         id: crypto.randomUUID(),
@@ -144,9 +145,10 @@ export function Timeline({
         ...link,
         ...(due ? { dueAt: new Date(due).toISOString(), assigneeId: assignee } : {}),
       });
-      setSubject('');
-      setBody('');
-      setDue('');
+      // Only clear what's still as it was sent, so anything typed while saving isn't lost.
+      setSubject((v) => (v === sent.subject ? '' : v));
+      setBody((v) => (v === sent.body ? '' : v));
+      setDue((v) => (v === sent.due ? '' : v));
       onChanged();
     } catch (err) {
       toast({ tone: 'error', message: errorMessage(err) });

@@ -29,6 +29,7 @@ test('CRM: company, contact, activity, follow-up for a colleague, deal through t
   await contact.getByLabel('Activity details').fill('Wants a rollout in Q1');
   await contact.getByRole('button', { name: 'Log' }).click();
   await expect(contact.getByText('Wants a rollout in Q1')).toBeVisible();
+  await expect(contact.getByLabel('Activity summary')).toHaveValue(''); // the Log save has finished
   await contact.getByLabel('Activity summary').fill('Send pricing');
   const tomorrow = new Date(Date.now() + 86400_000);
   const local = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}T10:00`;
