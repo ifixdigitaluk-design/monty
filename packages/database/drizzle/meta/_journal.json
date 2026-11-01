@@ -134,6 +134,104 @@
       "when": 1793442734683,
       "tag": "0018_data_lifecycle_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793460108444,
+      "tag": "0019_mfa",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793461454049,
+      "tag": "0020_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793461455209,
+      "tag": "0021_chat_rls_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793462354304,
+      "tag": "0022_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793462355112,
+      "tag": "0023_attachments_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793463818779,
+      "tag": "0024_databases",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793463819797,
+      "tag": "0025_databases_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793464825987,
+      "tag": "0026_user_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793470577267,
+      "tag": "0027_crm",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793470578280,
+      "tag": "0028_crm_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793471757444,
+      "tag": "0029_hr",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793471758565,
+      "tag": "0030_hr_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793486944929,
+      "tag": "0031_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793486946168,
+      "tag": "0032_meetings_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,36 @@
+# Server overlay for a single always-on Linux VM (e.g. Oracle Cloud Always Free).
+# Adds Caddy for automatic HTTPS (Let's Encrypt) and keeps the app containers off the public network.
+# Used by infra/oracle/install.sh:
+#   docker compose --env-file infra/docker/.env -f compose.yaml -f infra/oracle/compose.oracle.yaml up -d --build
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.10-alpine}
+    environment:
+      MONTY_DOMAIN: ${MONTY_DOMAIN:?set MONTY_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep across restarts (Let's Encrypt rate limits)
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_healthy }
+    restart: unless-stopped
+
+  # Only Caddy is reachable from outside; the app listens on the internal network.
+  api:
+    ports: !reset []
+    environment:
+      APP_URL: https://${MONTY_DOMAIN}
+      ALLOWED_ORIGINS: https://${MONTY_DOMAIN}
+      TRUST_PROXY: "uniquelocal"
+      SIGNUP_MODE: ${SIGNUP_MODE:-invite}
+      RELEASE: ${RELEASE:-unknown}
+  web:
+    ports: !reset []
+
+volumes:
+  caddy_data:
+  caddy_config:

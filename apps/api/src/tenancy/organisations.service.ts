@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { canInOrg, effectiveWorkspaceRole } from '@monty/domain';
 import {
   DbOrTx,
@@ -9,7 +9,7 @@ import {
   workspaces,
 } from '@monty/database';
 import type { CreateOrganisationInput, CreateWorkspaceInput, OrganisationDto, WorkspaceSummaryDto } from '@monty/validation';
-import { forbidden, notFound } from '../common/errors';
+import { badRequest, forbidden, notFound } from '../common/errors';
 import { randomSuffix, slugify } from '../common/slug';
 import { AuditService, ClientInfo } from '../audit/audit.service';
 import { DbService } from '../db/db.service';
@@ -100,6 +100,41 @@ export class OrganisationsService {
       return ws;
     });
     return { id: ws.id, name: ws.name, slug: ws.slug, role: 'ADMIN' };
+  }
+
+  /** Owners and admins of the organisation manage its workspaces (departments). */
+  private async manageableWorkspace(userId: string, workspaceId: string) {
+    const [row] = await this.dbs.db
+      .select({ ws: workspaces, role: organisationMemberships.role, kind: organisations.kind })
+      .from(workspaces)
+      .innerJoin(organisations, and(eq(organisations.id, workspaces.organisationId), isNull(organisations.deletedAt)))
+      .innerJoin(organisationMemberships, and(eq(organisationMemberships.organisationId, workspaces.organisationId), eq(organisationMemberships.userId, userId)))
+      .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.deletedAt)))
+      .limit(1);
+    if (!row) throw notFound('Workspace');
+    if (!canInOrg(row.role, 'workspace.create')) throw forbidden('Only organisation owners and admins can rename or delete workspaces');
+    return row;
+  }
+
+  async renameWorkspace(userId: string, workspaceId: string, name: string, client: ClientInfo = {}): Promise<WorkspaceSummaryDto> {
+    const { ws } = await this.manageableWorkspace(userId, workspaceId);
+    await this.dbs.db.update(workspaces).set({ name }).where(eq(workspaces.id, workspaceId));
+    await this.audit.record({ organisationId: ws.organisationId, actorId: userId, action: 'workspace.renamed', targetType: 'workspace', targetId: ws.id, data: { from: ws.name, to: name }, client });
+    return { id: ws.id, name, slug: ws.slug, role: 'ADMIN' };
+  }
+
+  /** Hides the workspace and everything in it. An organisation always keeps at least one workspace. */
+  async deleteWorkspace(userId: string, workspaceId: string, confirmName: string, client: ClientInfo = {}): Promise<void> {
+    const { ws, kind } = await this.manageableWorkspace(userId, workspaceId);
+    if (kind === 'PERSONAL') throw badRequest('Your personal workspace can’t be deleted.');
+    if (confirmName.trim() !== ws.name) throw badRequest('Type the workspace name exactly to confirm.', [{ path: 'confirmName', message: 'Does not match' }]);
+    const [{ n }] = (await this.dbs.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(workspaces)
+      .where(and(eq(workspaces.organisationId, ws.organisationId), isNull(workspaces.deletedAt)))) as [{ n: number }];
+    if (n <= 1) throw badRequest('An organisation needs at least one workspace. Create another one first.');
+    await this.dbs.db.update(workspaces).set({ deletedAt: new Date() }).where(eq(workspaces.id, workspaceId));
+    await this.audit.record({ organisationId: ws.organisationId, actorId: userId, action: 'workspace.deleted', targetType: 'workspace', targetId: ws.id, data: { name: ws.name }, client });
   }
 
   private async createWorkspaceTx(tx: DbOrTx, organisationId: string, name: string, creatorId: string) {

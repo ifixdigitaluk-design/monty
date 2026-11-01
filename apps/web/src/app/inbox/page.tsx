@@ -22,7 +22,31 @@ function describe(n: NotificationDto): string {
   if (n.type === 'automation') {
     return `Automation “${(n.data.ruleName as string) ?? 'rule'}”: ${(n.data.message as string) ?? ''}${n.data.title ? ` — “${n.data.title as string}”` : ''}`;
   }
+  if (n.entityType === 'hr_leave') {
+    const d = n.data as { who?: string; startDate?: string; endDate?: string; days?: number };
+    const when = d.startDate ? `${d.startDate}${d.endDate && d.endDate !== d.startDate ? ` to ${d.endDate}` : ''}` : '';
+    if (n.type === 'leave_request') return `${d.who ?? who} asked for leave: ${when}${d.days ? ` (${d.days} days)` : ''}`;
+    if (n.type === 'leave_cancelled') return `${d.who ?? who} cancelled approved leave: ${when}`;
+    return `${who} ${n.type === 'leave_approved' ? 'approved' : 'declined'} your leave: ${when}`;
+  }
+  if (n.entityType === 'meeting') {
+    const d = n.data as { title?: string; startsAt?: string; why?: string; actionItem?: string };
+    const when = d.startsAt ? new Date(d.startsAt).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    if (d.actionItem) return `${who} gave you an action from “${d.title}”: ${d.actionItem}`;
+    if (d.why === 'cancelled') return `${who} cancelled “${d.title}” (${when})`;
+    if (d.why === 'changed') return `${who} moved “${d.title}” to ${when}`;
+    return `${who} invited you to “${d.title}” — ${when}`;
+  }
+  if (n.entityType === 'hr_checklist') return `${who} gave you ${(n.data.steps as number) ?? 1} step(s) in “${(n.data.title as string) ?? 'a checklist'}”`;
+  if (n.entityType === 'hr_review') return `${who} shared your review for ${(n.data.period as string) ?? 'this period'}`;
+  if (n.type === 'assigned' && n.entityType === 'crm_activity') {
+    const due = n.data.dueAt ? new Date(n.data.dueAt as string).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : null;
+    return `${who} gave you a follow-up: “${(n.data.title as string) ?? ''}”${due ? ` (due ${due})` : ''}`;
+  }
   if (n.type === 'assigned') return `${who} assigned you “${task ?? 'a task'}”${project ? ` in ${project}` : ''}`;
+  if (n.type === 'mention' && n.entityType === 'message') {
+    return `${who} mentioned you in ${(n.data.channelName as string) ?? 'chat'}: “${(n.data.preview as string) ?? ''}”`;
+  }
   if (n.type === 'mention') return `${who} mentioned you${task ? ` on “${task}”` : project ? ` in ${project}` : ''}`;
   return `${who} commented on “${task ?? 'a task'}”`;
 }
@@ -47,6 +71,24 @@ function Inbox() {
   async function open(n: NotificationDto) {
     if (!n.readAt) await api.notifications.markRead([n.id]).catch(() => undefined);
     const taskId = n.entityType === 'task' ? n.entityId : ((n.data.taskId as string | null) ?? null);
+    if (n.entityType === 'message') {
+      const d = n.data as { workspaceId?: string; channelId?: string; threadId?: string | null };
+      router.push(`/chat?${d.workspaceId ? `ws=${d.workspaceId}&` : ''}c=${d.channelId}${d.threadId ? `&t=${d.threadId}` : ''}`);
+      return;
+    }
+    if (n.entityType === 'meeting') {
+      router.push(`/meetings?ws=${n.data.workspaceId as string}&id=${n.entityId}`);
+      return;
+    }
+    if (n.entityType.startsWith('hr_')) {
+      const tab = n.entityType === 'hr_leave' ? 'leave' : n.entityType === 'hr_checklist' ? 'onboarding' : 'reviews';
+      router.push(`/hr?org=${n.data.organisationId as string}&tab=${tab}`);
+      return;
+    }
+    if (n.entityType === 'crm_activity') {
+      router.push(`/crm?ws=${n.data.workspaceId as string}&tab=followups`);
+      return;
+    }
     if (n.projectId) router.push(`/project?id=${n.projectId}${taskId ? `&task=${taskId}` : ''}`);
   }
 

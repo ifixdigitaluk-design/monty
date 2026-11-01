@@ -4,6 +4,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   date,
   doublePrecision,
@@ -44,6 +45,11 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
   emailVerifiedAt: ts('email_verified_at'),
+  /** TOTP secret (AES-256-GCM encrypted, base32 inside). Set during setup; active only once mfaEnabledAt is set. */
+  mfaSecret: text('mfa_secret'),
+  mfaEnabledAt: ts('mfa_enabled_at'),
+  /** Last accepted TOTP time step: a code can be used once (replay protection). */
+  mfaLastStep: integer('mfa_last_step'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
   deletedAt: ts('deleted_at'),
@@ -628,6 +634,582 @@ export const dataExports = pgTable(
   (t) => [index('data_exports_user_idx').on(t.userId, t.createdAt)],
 );
 
+/** Single-use recovery codes for two-factor sign-in. Only SHA-256 hashes are stored. */
+export const mfaRecoveryCodes = pgTable(
+  'mfa_recovery_codes',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull(),
+    createdAt: createdAt(),
+    usedAt: ts('used_at'),
+  },
+  (t) => [index('mfa_recovery_user_idx').on(t.userId)],
+);
+
+/** Second step of a password sign-in for accounts with two-factor authentication. Short-lived, attempt-limited. */
+export const loginChallenges = pgTable('login_challenges', {
+  id: pk(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: createdAt(),
+  expiresAt: ts('expires_at').notNull(),
+  usedAt: ts('used_at'),
+});
+
+// ---------- team chat ----------
+/** A conversation in a workspace: a public or private channel, or a direct message between up to 8 people. */
+export const channels = pgTable(
+  'channels',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    /** public | private | dm */
+    kind: text('kind').notNull(),
+    /** Lower-case slug for channels; null for direct messages. */
+    name: text('name'),
+    topic: text('topic').notNull().default(''),
+    /** For direct messages: sorted member ids joined with ',' (one conversation per set of people). */
+    dmKey: text('dm_key'),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    archivedAt: ts('archived_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'channels_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    uniqueIndex('channels_name_unique').on(t.workspaceId, t.name).where(sql`kind <> 'dm'`),
+    uniqueIndex('channels_dm_unique').on(t.workspaceId, t.dmKey).where(sql`kind = 'dm'`),
+    unique('channels_id_ws_unique').on(t.id, t.workspaceId),
+  ],
+);
+
+export const channelMembers = pgTable(
+  'channel_members',
+  {
+    id: pk(),
+    channelId: uuid('channel_id').notNull(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** member | admin (the creator; can rename, archive and remove people) */
+    role: text('role').notNull().default('member'),
+    joinedAt: createdAt(),
+    lastReadAt: ts('last_read_at').notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ name: 'channel_members_channel_fk', columns: [t.channelId, t.workspaceId], foreignColumns: [channels.id, channels.workspaceId] }).onDelete('cascade'),
+    unique('channel_members_unique').on(t.channelId, t.userId),
+    index('channel_members_user_idx').on(t.userId),
+  ],
+);
+
+export const messages = pgTable(
+  'messages',
+  {
+    id: pk(),
+    channelId: uuid('channel_id').notNull(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id),
+    /** Thread root this message replies to (null = top-level). */
+    parentId: uuid('parent_id'),
+    /** Markdown; mentions encoded as <@user-uuid>. */
+    body: text('body').notNull(),
+    replyCount: integer('reply_count').notNull().default(0),
+    lastReplyAt: ts('last_reply_at'),
+    createdAt: createdAt(),
+    editedAt: ts('edited_at'),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'messages_channel_fk', columns: [t.channelId, t.workspaceId], foreignColumns: [channels.id, channels.workspaceId] }).onDelete('cascade'),
+    index('messages_channel_idx').on(t.channelId, t.createdAt),
+    index('messages_parent_idx').on(t.parentId, t.createdAt),
+  ],
+);
+
+export const messageReactions = pgTable(
+  'message_reactions',
+  {
+    id: pk(),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    emoji: text('emoji').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique('message_reactions_unique').on(t.messageId, t.userId, t.emoji)],
+);
+
+/**
+ * Uploaded files. Bytes live in the file store (FILES_DIR, a persistent volume) under `storageKey`; this row holds
+ * metadata and who may see it. Chat uploads start "pending" on a channel and are linked to a message when posted.
+ */
+export const attachments = pgTable(
+  'attachments',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    uploaderId: uuid('uploader_id')
+      .notNull()
+      .references(() => users.id),
+    /** task | document | message | channel (pending chat upload) */
+    targetType: text('target_type').notNull(),
+    targetId: uuid('target_id').notNull(),
+    /** For chat: the channel (targetType message/channel). Used by row-level security. */
+    channelId: uuid('channel_id'),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'attachments_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('attachments_target_idx').on(t.targetType, t.targetId),
+  ],
+);
+
+/**
+ * Notion-style databases: a table of rows with typed fields (properties), shown through saved views.
+ * Cell values live in `database_rows.values` keyed by field id; the row title is its own column.
+ */
+export const databases = pgTable(
+  'databases',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'databases_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('databases_workspace_idx').on(t.workspaceId),
+  ],
+);
+
+export const databaseFields = pgTable(
+  'database_fields',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** text | number | select | multi_select | date | checkbox | person | url */
+    type: text('type').notNull(),
+    /** For select / multi_select: { choices: [{ id, label, color }] }. */
+    options: jsonb('options').$type<{ choices?: { id: string; label: string; color: string }[] }>().notNull().default(sql`'{}'::jsonb`),
+    position: doublePrecision('position').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'database_fields_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_fields_db_idx').on(t.databaseId),
+  ],
+);
+
+export const databaseRows = pgTable(
+  'database_rows',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    title: text('title').notNull().default(''),
+    values: jsonb('values').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** The row's page (markdown), like opening a Notion row. */
+    body: text('body').notNull().default(''),
+    /** Bumped only when the page body changes, so cell edits never conflict with someone writing the page. */
+    bodyVersion: integer('body_version').notNull().default(1),
+    position: doublePrecision('position').notNull().default(0),
+    createdById: uuid('created_by_id')
+      .notNull()
+      .references(() => users.id),
+    updatedById: uuid('updated_by_id')
+      .notNull()
+      .references(() => users.id),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [
+    foreignKey({ name: 'database_rows_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_rows_db_idx').on(t.databaseId, t.position),
+  ],
+);
+
+export const databaseViews = pgTable(
+  'database_views',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    databaseId: uuid('database_id')
+      .notNull()
+      .references(() => databases.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** table | board */
+    layout: text('layout').notNull().default('table'),
+    config: jsonb('config').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    position: doublePrecision('position').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'database_views_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('database_views_db_idx').on(t.databaseId),
+  ],
+);
+
+/** External sign-in identities (Google). `subject` is the provider's stable user id, never the email. */
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    id: pk(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    subject: text('subject').notNull(),
+    email: text('email').notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: ts('last_used_at'),
+  },
+  (t) => [uniqueIndex('user_identities_provider_subject_idx').on(t.provider, t.subject), index('user_identities_user_idx').on(t.userId)],
+);
+
+// ---------- CRM ----------
+const tenant = () => ({ organisationId: uuid('organisation_id').notNull(), workspaceId: uuid('workspace_id').notNull() });
+const userRef = (name: string) => uuid(name).references(() => users.id);
+
+export const crmCompanies = pgTable(
+  'crm_companies',
+  {
+    id: pk(),
+    ...tenant(),
+    name: text('name').notNull(),
+    website: text('website').notNull().default(''),
+    industry: text('industry').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    address: text('address').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    ownerId: userRef('owner_id'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_companies_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_companies_ws_idx').on(t.workspaceId, t.name)],
+);
+
+export const crmContacts = pgTable(
+  'crm_contacts',
+  {
+    id: pk(),
+    ...tenant(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    email: text('email').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    jobTitle: text('job_title').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    ownerId: userRef('owner_id'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_contacts_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_contacts_ws_idx').on(t.workspaceId, t.name), index('crm_contacts_company_idx').on(t.companyId)],
+);
+
+export const crmDeals = pgTable(
+  'crm_deals',
+  {
+    id: pk(),
+    ...tenant(),
+    title: text('title').notNull(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'set null' }),
+    /** lead | qualified | proposal | negotiation | won | lost */
+    stage: text('stage').notNull().default('lead'),
+    /** Minor units (pence/cents). */
+    value: bigint('value', { mode: 'number' }).notNull().default(0),
+    currency: text('currency').notNull().default('GBP'),
+    expectedClose: date('expected_close'),
+    ownerId: userRef('owner_id'),
+    lostReason: text('lost_reason').notNull().default(''),
+    closedAt: ts('closed_at'),
+    position: doublePrecision('position').notNull().default(0),
+    notes: text('notes').notNull().default(''),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_deals_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), index('crm_deals_ws_idx').on(t.workspaceId, t.stage), index('crm_deals_company_idx').on(t.companyId)],
+);
+
+export const crmActivities = pgTable(
+  'crm_activities',
+  {
+    id: pk(),
+    ...tenant(),
+    /** note | call | meeting | email | task */
+    type: text('type').notNull(),
+    subject: text('subject').notNull(),
+    body: text('body').notNull().default(''),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'cascade' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'cascade' }),
+    dealId: uuid('deal_id').references(() => crmDeals.id, { onDelete: 'cascade' }),
+    /** A follow-up when set: who should do it and when. */
+    dueAt: ts('due_at'),
+    assigneeId: userRef('assignee_id'),
+    doneAt: ts('done_at'),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'crm_activities_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('crm_activities_ws_due_idx').on(t.workspaceId, t.dueAt),
+    index('crm_activities_company_idx').on(t.companyId),
+    index('crm_activities_contact_idx').on(t.contactId),
+    index('crm_activities_deal_idx').on(t.dealId),
+  ],
+);
+
+export const crmQuotes = pgTable(
+  'crm_quotes',
+  {
+    id: pk(),
+    ...tenant(),
+    /** Q-0001, unique per workspace. */
+    number: text('number').notNull(),
+    title: text('title').notNull(),
+    companyId: uuid('company_id').references(() => crmCompanies.id, { onDelete: 'set null' }),
+    contactId: uuid('contact_id').references(() => crmContacts.id, { onDelete: 'set null' }),
+    dealId: uuid('deal_id').references(() => crmDeals.id, { onDelete: 'set null' }),
+    /** draft | sent | accepted | declined */
+    status: text('status').notNull().default('draft'),
+    currency: text('currency').notNull().default('GBP'),
+    issueDate: date('issue_date').notNull(),
+    validUntil: date('valid_until'),
+    /** [{ description, quantity, unitPrice (minor units), taxRate (percent) }] */
+    lines: jsonb('lines').$type<{ description: string; quantity: number; unitPrice: number; taxRate: number }[]>().notNull().default(sql`'[]'::jsonb`),
+    subtotal: bigint('subtotal', { mode: 'number' }).notNull().default(0),
+    tax: bigint('tax', { mode: 'number' }).notNull().default(0),
+    total: bigint('total', { mode: 'number' }).notNull().default(0),
+    notes: text('notes').notNull().default(''),
+    createdById: userRef('created_by_id').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [foreignKey({ name: 'crm_quotes_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'), uniqueIndex('crm_quotes_number_idx').on(t.workspaceId, t.number)],
+);
+
+// ---------- HR (organisation-wide; private details encrypted at rest) ----------
+const orgRef = () => uuid('organisation_id').notNull().references(() => organisations.id, { onDelete: 'cascade' });
+
+/** People who administer HR in an organisation (owners always can). */
+export const hrRoles = pgTable(
+  'hr_roles',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    grantedById: uuid('granted_by_id').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('hr_roles_org_user_idx').on(t.organisationId, t.userId)],
+);
+
+export const hrProfiles = pgTable(
+  'hr_profiles',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    jobTitle: text('job_title').notNull().default(''),
+    department: text('department').notNull().default(''),
+    managerId: uuid('manager_id').references(() => users.id, { onDelete: 'set null' }),
+    startDate: date('start_date'),
+    endDate: date('end_date'),
+    /** full_time | part_time | contractor | intern */
+    employmentType: text('employment_type').notNull().default('full_time'),
+    location: text('location').notNull().default(''),
+    workPhone: text('work_phone').notNull().default(''),
+    annualLeaveDays: doublePrecision('annual_leave_days').notNull().default(25),
+    /** AES-GCM JSON: personal email/phone, address, date of birth, emergency contact, salary. */
+    privateData: text('private_data'),
+    updatedById: uuid('updated_by_id').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('hr_profiles_org_user_idx').on(t.organisationId, t.userId), index('hr_profiles_manager_idx').on(t.organisationId, t.managerId)],
+);
+
+export const hrLeaveRequests = pgTable(
+  'hr_leave_requests',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** annual | sick | unpaid | parental | other */
+    type: text('type').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    halfDay: boolean('half_day').notNull().default(false),
+    days: doublePrecision('days').notNull(),
+    reason: text('reason').notNull().default(''),
+    /** pending | approved | declined | cancelled */
+    status: text('status').notNull().default('pending'),
+    decidedById: uuid('decided_by_id').references(() => users.id),
+    decidedAt: ts('decided_at'),
+    decisionNote: text('decision_note').notNull().default(''),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('hr_leave_org_dates_idx').on(t.organisationId, t.startDate), index('hr_leave_user_idx').on(t.userId)],
+);
+
+export const hrChecklists = pgTable(
+  'hr_checklists',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    /** onboarding | offboarding */
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    /** The joiner/leaver's name (they may not have an account yet). */
+    subjectName: text('subject_name').notNull(),
+    subjectUserId: uuid('subject_user_id').references(() => users.id, { onDelete: 'set null' }),
+    dueDate: date('due_date'),
+    createdById: uuid('created_by_id').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_checklists_org_idx').on(t.organisationId)],
+);
+
+export const hrChecklistItems = pgTable(
+  'hr_checklist_items',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    checklistId: uuid('checklist_id').notNull().references(() => hrChecklists.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    dueDate: date('due_date'),
+    doneAt: ts('done_at'),
+    doneById: uuid('done_by_id').references(() => users.id),
+    position: doublePrecision('position').notNull().default(0),
+  },
+  (t) => [index('hr_items_checklist_idx').on(t.checklistId), index('hr_items_assignee_idx').on(t.assigneeId)],
+);
+
+/** Private employee files (contracts etc.). Bytes are encrypted on disk with the data key. */
+export const hrDocuments = pgTable(
+  'hr_documents',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    subjectUserId: uuid('subject_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    /** contract | identity | certificate | review | other */
+    category: text('category').notNull().default('other'),
+    filename: text('filename').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    uploaderId: uuid('uploader_id').notNull().references(() => users.id),
+    createdAt: createdAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_documents_subject_idx').on(t.organisationId, t.subjectUserId)],
+);
+
+export const hrReviews = pgTable(
+  'hr_reviews',
+  {
+    id: pk(),
+    organisationId: orgRef(),
+    subjectUserId: uuid('subject_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    reviewerId: uuid('reviewer_id').notNull().references(() => users.id),
+    period: text('period').notNull(),
+    rating: integer('rating'),
+    /** AES-GCM JSON: { strengths, improvements, goals, notes }. */
+    content: text('content').notNull(),
+    /** draft | shared */
+    status: text('status').notNull().default('draft'),
+    sharedAt: ts('shared_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: ts('deleted_at'),
+  },
+  (t) => [index('hr_reviews_subject_idx').on(t.organisationId, t.subjectUserId)],
+);
+
+/** Meetings in a workspace (department): time, attendees, video link, agenda, minutes, action items. */
+export const meetings = pgTable(
+  'meetings',
+  {
+    id: pk(),
+    organisationId: uuid('organisation_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    title: text('title').notNull(),
+    startsAt: ts('starts_at').notNull(),
+    durationMinutes: integer('duration_minutes').notNull().default(30),
+    videoUrl: text('video_url').notNull().default(''),
+    location: text('location').notNull().default(''),
+    agenda: text('agenda').notNull().default(''),
+    minutes: text('minutes').notNull().default(''),
+    attendeeIds: jsonb('attendee_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    actionItems: jsonb('action_items').$type<{ id: string; text: string; assigneeId: string | null; done: boolean }[]>().notNull().default(sql`'[]'::jsonb`),
+    organizerId: uuid('organizer_id').notNull().references(() => users.id),
+    cancelledAt: ts('cancelled_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    foreignKey({ name: 'meetings_workspace_org_fk', columns: [t.workspaceId, t.organisationId], foreignColumns: [workspaces.id, workspaces.organisationId] }).onDelete('cascade'),
+    index('meetings_ws_start_idx').on(t.workspaceId, t.startsAt),
+  ],
+);
+
 /** One-time tokens sent by email (password reset, email verification). Only the SHA-256 hash is stored. */
 export const userTokens = pgTable(
   'user_tokens',
@@ -687,3 +1269,19 @@ export type DocumentVersion = typeof documentVersions.$inferSelect;
 export type AiProposal = typeof aiProposals.$inferSelect;
 export type AutomationRule = typeof automationRules.$inferSelect;
 export type AutomationRun = typeof automationRuns.$inferSelect;
+export type DatabaseTable = typeof databases.$inferSelect;
+export type DatabaseField = typeof databaseFields.$inferSelect;
+export type DatabaseRow = typeof databaseRows.$inferSelect;
+export type DatabaseView = typeof databaseViews.$inferSelect;
+export type CrmCompany = typeof crmCompanies.$inferSelect;
+export type CrmContact = typeof crmContacts.$inferSelect;
+export type CrmDeal = typeof crmDeals.$inferSelect;
+export type CrmActivity = typeof crmActivities.$inferSelect;
+export type CrmQuote = typeof crmQuotes.$inferSelect;
+export type HrProfile = typeof hrProfiles.$inferSelect;
+export type HrLeaveRequest = typeof hrLeaveRequests.$inferSelect;
+export type HrChecklist = typeof hrChecklists.$inferSelect;
+export type HrChecklistItem = typeof hrChecklistItems.$inferSelect;
+export type HrDocument = typeof hrDocuments.$inferSelect;
+export type HrReview = typeof hrReviews.$inferSelect;
+export type Meeting = typeof meetings.$inferSelect;

@@ -61,6 +61,21 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const [orgModal, setOrgModal] = useState(false);
   const [wsModalOrg, setWsModalOrg] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const [chatUnread, setChatUnread] = useState({ unread: 0, mentions: 0 });
+  useEffect(() => {
+    let alive = true;
+    const poll = () =>
+      api.chat
+        .unread()
+        .then((r) => alive && setChatUnread(r.workspaces.reduce((a, w) => ({ unread: a.unread + w.unread, mentions: a.mentions + w.mentions }), { unread: 0, mentions: 0 })))
+        .catch(() => undefined);
+    void poll();
+    const t = setInterval(poll, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [pathname]);
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -103,6 +118,11 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           </button>
           {navItem('/home', 'Home', pathname === '/home')}
           {navItem('/inbox', unread > 0 ? `Inbox (${unread})` : 'Inbox', pathname === '/inbox')}
+          {navItem('/chat', chatUnread.mentions > 0 ? `Chat (@${chatUnread.mentions})` : chatUnread.unread > 0 ? `Chat (${chatUnread.unread})` : 'Chat', pathname === '/chat')}
+          {navItem('/meetings', 'Meetings', pathname === '/meetings')}
+          {navItem('/databases', 'Databases', pathname === '/databases')}
+          {navItem('/crm', 'CRM', pathname.startsWith('/crm'))}
+          {organisations.some((o) => o.kind === 'TEAM' && o.role !== 'GUEST') ? navItem('/hr', 'HR', pathname === '/hr') : null}
           {navItem('/tasks', 'My Tasks', pathname === '/tasks')}
           {navItem('/calendar', 'Calendar', pathname === '/calendar')}
         </div>

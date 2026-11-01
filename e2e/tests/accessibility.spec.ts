@@ -21,7 +21,7 @@ async function axe(page: Page): Promise<Violation[]> {
 }
 const summary = (v: Violation[]) => v.map((x) => `${x.impact} ${x.id}: ${x.help} (${x.nodes.length}× e.g. ${x.nodes[0]?.target.join(' ')})`);
 
-test('no axe violations on the 13 main pages (desktop and phone width)', async ({ page }) => {
+test('no axe violations on the main pages (desktop and phone width)', async ({ page }) => {
   test.setTimeout(120_000);
   const results: Record<string, string[]> = {};
   await page.goto('/login');
@@ -55,11 +55,70 @@ test('no axe violations on the 13 main pages (desktop and phone width)', async (
     ['automations', ws.replace('/workspace?id=', '/automations?ws=')],
     ['sessions', '/settings/sessions'],
     ['account', '/settings/account'],
+    ['chat', `/chat?ws=${ws.split('id=')[1]}`],
+    ['databases-empty', `/databases?ws=${ws.split('id=')[1]}`],
+    ['meetings', `/meetings?ws=${ws.split('id=')[1]}`],
   ];
   for (const [name, url] of pages) {
     await page.goto(url);
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
     if (name === 'calendar') await expect(page.getByRole('list', { name: /^Items on / })).toContainText('Due today');
+    results[name] = summary(await axe(page));
+  }
+  // A populated database: table (every field type), board, and an open row page.
+  const wsId = ws.split('id=')[1]!;
+  const db = (await (await page.request.post(`/api/v1/workspaces/${wsId}/databases`, { headers, data: { name: 'Audit DB' } })).json()).database;
+  const status = db.fields[0];
+  const typed: Record<string, string> = {};
+  for (const [name, type, extra] of [
+    ['Notes', 'text'], ['Score', 'number'], ['Due', 'date'], ['Done', 'checkbox'], ['Owner', 'person'], ['Link', 'url'],
+    ['Tags', 'multi_select', { options: { choices: [{ id: 'a', label: 'Alpha', color: 'purple' }, { id: 'b', label: 'Beta', color: 'orange' }] } }],
+  ] as [string, string, object?][]) {
+    typed[name] = (await (await page.request.post(`/api/v1/databases/${db.id}/fields`, { headers, data: { name, type, ...extra } })).json()).field.id;
+  }
+  const me = (await (await page.request.get('/api/v1/auth/me')).json()).user.id;
+  const row = (await (await page.request.post(`/api/v1/databases/${db.id}/rows`, {
+    headers,
+    data: { title: 'First row', values: { [status.id]: 'doing', [typed.Notes!]: 'Hello', [typed.Score!]: 3, [typed.Due!]: today, [typed.Done!]: true, [typed.Owner!]: [me], [typed.Link!]: 'https://example.com', [typed.Tags!]: ['a', 'b'] } },
+  })).json()).row;
+  for (const [name, url] of [
+    ['database-table', `/databases?ws=${wsId}&id=${db.id}`],
+    ['database-board', `/databases?ws=${wsId}&id=${db.id}&view=${db.views[1].id}`],
+    ['database-row', `/databases?ws=${wsId}&id=${db.id}&row=${row.id}`],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText('First row').or(page.getByLabel('Name of First row')).first()).toBeVisible();
+    results[name] = summary(await axe(page));
+  }
+  // CRM: overview, pipeline, a company panel and a quote.
+  const company = (await (await page.request.post(`/api/v1/workspaces/${wsId}/crm/companies`, { headers, data: { name: 'Audit Co' } })).json()).company;
+  await page.request.post(`/api/v1/workspaces/${wsId}/crm/deals`, { headers, data: { title: 'Audit deal', companyId: company.id, value: 1000, stage: 'qualified' } });
+  await page.request.post(`/api/v1/workspaces/${wsId}/crm/activities`, { headers, data: { type: 'task', subject: 'Call back', companyId: company.id, dueAt: new Date(Date.now() + 3600_000).toISOString() } });
+  const quote = (await (await page.request.post(`/api/v1/workspaces/${wsId}/crm/quotes`, { headers, data: { title: 'Audit quote', companyId: company.id, lines: [{ description: 'Work', quantity: 1, unitPrice: 1000, taxRate: 20 }] } })).json()).quote;
+  for (const [name, url, text] of [
+    ['crm-overview', `/crm?ws=${wsId}`, 'Closing soon'],
+    ['crm-pipeline', `/crm?ws=${wsId}&tab=pipeline`, 'Audit deal'],
+    ['crm-company', `/crm?ws=${wsId}&tab=companies&company=${company.id}`, 'Call back'],
+    ['crm-quote', `/crm/quote?ws=${wsId}&id=${quote.id}`, 'Audit quote'],
+    ['crm-quote-print', `/crm/quote/print?id=${quote.id}`, 'Quote Q-0001'],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText(text).first()).toBeVisible();
+    results[name] = summary(await axe(page));
+  }
+  // HR needs a team organisation.
+  const team = (await (await page.request.post('/api/v1/organisations', { headers, data: { name: 'Audit Team' } })).json()).organisation;
+  await page.request.post(`/api/v1/organisations/${team.id}/hr/leave`, { headers, data: { type: 'annual', startDate: today, endDate: today } }).catch(() => undefined);
+  await page.request.post(`/api/v1/organisations/${team.id}/hr/checklists`, { headers, data: { kind: 'onboarding', subjectName: 'Audit Joiner' } });
+  for (const [name, url, text] of [
+    ['hr-people', `/hr?org=${team.id}`, 'Staff directory'],
+    ['hr-person', `/hr?org=${team.id}&person=${me}`, 'Personal details'],
+    ['hr-leave', `/hr?org=${team.id}&tab=leave`, 'Who’s away'],
+    ['hr-onboarding', `/hr?org=${team.id}&tab=onboarding`, 'Onboarding: Audit Joiner'],
+    ['hr-reviews', `/hr?org=${team.id}&tab=reviews`, 'No reviews'],
+  ] as const) {
+    await page.goto(url);
+    await expect(page.getByText(text).first()).toBeVisible();
     results[name] = summary(await axe(page));
   }
   await page.setViewportSize({ width: 390, height: 844 });

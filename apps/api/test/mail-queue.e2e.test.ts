@@ -77,8 +77,8 @@ describe('durable email delivery over real SMTP', () => {
     expect(smtp.received).toHaveLength(1);
     expect(smtp.received[0]!.to).toEqual([u.email]);
     expect(smtp.received[0]!.messageId).toBe(`<${row!.id}@localhost>`);
-    const token = /verify-email\?token=3D([A-Za-z0-9_=\r\n-]+)|verify-email\?token=([A-Za-z0-9_-]+)/.exec(smtp.received[0]!.raw);
-    expect(token).not.toBeNull();
+    const decoded = smtp.received[0]!.raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+    expect(/verify-email\?token=[A-Za-z0-9_-]{20,}/.test(decoded)).toBe(true);
   });
 
   it('retries temporary failures (SMTP 451) with backoff, then delivers', async () => {
@@ -146,7 +146,8 @@ describe('durable email delivery over real SMTP', () => {
     const raw = smtp.received[0]!.raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
     const token = /verify-email\?token=([A-Za-z0-9_-]+)/.exec(raw)![1]!;
     const res = await request(second.getHttpServer()).post('/api/v1/auth/verify-email').set('X-Monty-Client', 'web').send({ token });
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body.signedIn).toBe(true);
     expect((await query<{ v: Date | null }>(`select email_verified_at as v from users where id = $1`, [u.user.id]))[0]!.v).not.toBeNull();
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { canInOrg } from '@monty/domain';
+import { canInOrg, PLAN_LIMITS } from '@monty/domain';
 import type { AuditEntryDto, InvitationDto, OrgMemberDto, OrgRoleValue, WorkspaceRoleValue } from '@monty/validation';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
@@ -155,7 +155,7 @@ function OrganisationView() {
 
       {tab === 'invitations' && canManage ? <Invitations orgId={id} workspaces={org.workspaces} /> : null}
       {tab === 'audit' && canManage ? <AuditLog orgId={id} /> : null}
-      {tab === 'plan' ? <PlanUsage orgId={id} /> : null}
+      {tab === 'plan' ? <PlanUsage orgId={id} isOwner={org.role === 'OWNER'} /> : null}
       {tab === 'settings' && canManage ? (
         <OrganisationSettings
           orgId={id}
@@ -387,7 +387,13 @@ const USAGE_LABEL: Record<string, string> = {
   automationRules: 'Automation rules',
 };
 
-function PlanUsage({ orgId }: { orgId: string }) {
+const PLANS = ['FREE', 'PRO', 'TEAM', 'BUSINESS', 'ENTERPRISE'] as const;
+const planName = (p: string) => p.charAt(0) + p.slice(1).toLowerCase();
+
+function PlanUsage({ orgId, isOwner }: { orgId: string; isOwner: boolean }) {
+  const toast = useToast();
+  const [choice, setChoice] = useState<(typeof PLANS)[number] | ''>('');
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState<{ plan: string; limits: Record<string, number | null>; usage: Record<string, number> } | null>(null);
   useEffect(() => {
     api.usage(orgId).then(setData).catch(() => undefined);
@@ -413,7 +419,60 @@ function PlanUsage({ orgId }: { orgId: string }) {
           );
         })}
       </ul>
-      <p className="text-[12px] text-muted">Online upgrades aren’t available yet — contact support to change plan.</p>
+      {isOwner ? (
+        <div className="border-t border-line pt-3">
+          <h3 className="mb-1 font-medium">Change plan</h3>
+          <p className="mb-2 text-[13px] text-muted">
+            Monty runs on your own server, so there’s no payment: pick the plan whose limits suit you. <strong>Enterprise</strong> has no limits. Lowering a plan never deletes anything; it only stops new additions above the limit.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="mb-3 w-full text-[13px]">
+              <caption className="sr-only">Plan limits</caption>
+              <thead>
+                <tr className="text-left text-muted">
+                  <th scope="col" className="py-1 pr-3 font-medium">Plan</th>
+                  {Object.keys(data.limits).map((k) => <th key={k} scope="col" className="py-1 pr-3 font-medium">{USAGE_LABEL[k] ?? k}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {PLANS.map((p) => (
+                  <tr key={p} className={p === data.plan ? 'font-semibold' : ''}>
+                    <th scope="row" className="py-1 pr-3 text-left">{planName(p)}{p === data.plan ? ' (current)' : ''}</th>
+                    {Object.keys(data.limits).map((k) => <td key={k} className="py-1 pr-3">{PLAN_LIMITS[p][k as keyof (typeof PLAN_LIMITS)['FREE']] ?? 'Unlimited'}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select aria-label="Plan" value={choice || data.plan} onChange={(e) => setChoice(e.target.value as (typeof PLANS)[number])}>
+              {PLANS.map((p) => <option key={p} value={p}>{planName(p)}</option>)}
+            </Select>
+            <Button
+              variant="primary"
+              busy={saving}
+              disabled={!choice || choice === data.plan}
+              onClick={async () => {
+                if (!choice) return;
+                setSaving(true);
+                try {
+                  setData(await api.setPlan(orgId, choice));
+                  setChoice('');
+                  toast({ tone: 'success', message: `Plan changed to ${planName(choice)}` });
+                } catch (err) {
+                  toast({ tone: 'error', message: errorMessage(err) });
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Change plan
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-[12px] text-muted">Only the organisation owner can change the plan.</p>
+      )}
     </div>
   );
 }

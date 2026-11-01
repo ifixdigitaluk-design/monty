@@ -41,10 +41,10 @@ export function verifyEmailEmail(to: string, name: string, url: string): MailMes
     kind: 'email_verification',
     to,
     subject: 'Confirm your email for Monty',
-    text: `Hi ${name},\n\nConfirm your email address with this link (valid for 7 days):\n\n${url}\n\n${footer}\n`,
+    text: `Hi ${name},\n\nConfirm your email address and sign in with this link (valid for 48 hours, works once):\n\n${url}\n\n${footer}\n`,
     html: layout(
       'Confirm your email',
-      `<p style="margin:0">Hi ${escapeHtml(name)}, please confirm this is your email address. The link is valid for 7 days.</p>`,
+      `<p style="margin:0">Hi ${escapeHtml(name)}, please confirm this is your email address. The link signs you in, is valid for 48 hours and works once.</p>`,
       { label: 'Confirm email', url },
       footer,
     ),
@@ -93,6 +93,39 @@ export function organisationDeletionEmail(to: string, organisationName: string, 
     html: layout(
       `${organisationName} is scheduled for deletion`,
       `<p style="margin:0">${escapeHtml(actorName)} scheduled <strong>${escapeHtml(organisationName)}</strong> for deletion. It is no longer accessible, and all its projects, tasks and documents will be permanently erased on <strong>${escapeHtml(purgeDate)}</strong>.</p>`,
+      { label: 'Open Monty', url },
+      footer,
+    ),
+  };
+}
+
+/** Sent instead of a second account when someone signs up with an email that already has one (no enumeration). */
+export function accountExistsEmail(to: string, name: string, signInUrl: string, resetUrl: string): MailMessage {
+  const footer = 'If this wasn’t you, you can ignore this email — nothing changed on your account.';
+  return {
+    kind: 'account_exists',
+    to,
+    subject: 'You already have a Monty account',
+    text: `Hi ${name},\n\nSomeone (hopefully you) tried to create a Monty account with this email, but you already have one.\n\nSign in: ${signInUrl}\nForgot your password? ${resetUrl}\n\n${footer}\n`,
+    html: layout(
+      'You already have an account',
+      `<p style="margin:0">Hi ${escapeHtml(name)}, someone (hopefully you) tried to create a Monty account with this email address, but it already has one. If you forgot your password, <a href="${escapeHtml(resetUrl)}">reset it here</a>.</p>`,
+      { label: 'Sign in', url: signInUrl },
+      footer,
+    ),
+  };
+}
+
+export function inviteOnlyEmail(to: string, url: string): MailMessage {
+  const footer = 'If you didn’t try to sign up, you can ignore this email.';
+  return {
+    kind: 'signup_invite_only',
+    to,
+    subject: 'Monty is invite-only',
+    text: `Someone tried to create a Monty account with this email. This Monty is invite-only: ask an administrator to invite this address, then use the link in the invitation.\n\n${url}\n\n${footer}\n`,
+    html: layout(
+      'An invitation is needed',
+      `<p style="margin:0">Someone tried to create a Monty account with this email. This Monty is invite-only: ask an administrator to invite this address, then use the link in the invitation email.</p>`,
       { label: 'Open Monty', url },
       footer,
     ),

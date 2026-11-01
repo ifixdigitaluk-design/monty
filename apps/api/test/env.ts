@@ -1,3 +1,6 @@
+import os from 'node:os';
+import path from 'node:path';
+
 // Owner connection: migrations, fixtures and assertions in tests.
 process.env.TEST_DATABASE_URL ??= 'postgresql://monty:monty_dev@localhost:5432/monty_test';
 // The API under test connects as the restricted runtime role, exactly like production, so RLS is exercised.
@@ -8,3 +11,9 @@ process.env.LOG_LEVEL = 'error';
 process.env.AUTH_RATE_LIMIT = '1000';
 process.env.RATE_LIMIT = '10000';
 process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
+process.env.FILES_DIR = path.join(os.tmpdir(), 'monty-test-uploads');
+
+// Concurrent queries on one connection (e.g. Promise.all inside a request transaction) break in pg@9. Fail loudly.
+process.on('warning', (w) => {
+  if (/already executing a query/.test(w.message)) throw new Error(`Concurrent queries on one database connection: ${w.stack ?? w.message}`);
+});

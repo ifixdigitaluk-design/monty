@@ -120,3 +120,11 @@ Compose refuses to start if a required secret is missing (`POSTGRES_PASSWORD`, `
 | `ERROR_WEBHOOK_URL` (error tracker intake) | Error reporting | Requires external provider |
 | `AI_API_KEY`, `AI_MODEL` (optional) | Hosted AI planning | Requires external provider |
 | Hosting account, domain, TLS certificate | Running the service | Requires external provider |
+
+## Oracle Cloud free VM (staff pilot)
+Step-by-step guide: `infra/oracle/README.md`. In short:
+- **Server:** Ubuntu 24.04 on an Always Free Ampere VM.
+- **Install:** `sudo bash infra/oracle/install.sh` installs Docker, opens ports 80/443, asks for the address and the Gmail app password, generates every other secret, starts the stack with Caddy (automatic Let's Encrypt HTTPS), schedules nightly `pg_dump` backups and a DuckDNS updater.
+- **Defaults:** sign-up is **invite-only**; the first account bootstraps.
+- **Downloads:** GitHub Pages (`site/`, workflow `pages.yml`) and a Windows installer built by `desktop-windows.yml` into GitHub Releases. The installer is unsigned, so SmartScreen warns on first run.
+- **Verification status:** the scripts pass `bash -n` and shellcheck, and the compose overlay validates. **They have not been run on an Oracle VM**: no account was available here. The first real install is the test.

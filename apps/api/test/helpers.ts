@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import request from 'supertest';
 import { createApp } from '../src/app.factory';
 import type { AppConfig } from '../src/config';
+import { MailService } from '../src/mail/mail.service';
+import { LogTransport } from '../src/mail/transports';
 
 export async function createTestApp(overrides: Partial<AppConfig> = {}) {
   const app = await createApp(overrides);
@@ -11,6 +13,31 @@ export async function createTestApp(overrides: Partial<AppConfig> = {}) {
 }
 
 const TABLES = [
+  'attachments',
+  'message_reactions',
+  'hr_reviews',
+  'hr_documents',
+  'hr_checklist_items',
+  'hr_checklists',
+  'hr_leave_requests',
+  'hr_profiles',
+  'hr_roles',
+  'meetings',
+  'crm_quotes',
+  'crm_activities',
+  'crm_deals',
+  'crm_contacts',
+  'crm_companies',
+  'user_identities',
+  'database_views',
+  'database_rows',
+  'database_fields',
+  'databases',
+  'messages',
+  'channel_members',
+  'channels',
+  'login_challenges',
+  'mfa_recovery_codes',
   'data_exports',
   'email_delivery_attempts',
   'email_outbox',
@@ -77,16 +104,45 @@ export async function signUp(app: INestApplication, name = 'User') {
     .post('/api/v1/auth/register')
     .set('X-Monty-Client', 'web')
     .send({ email, name, password: 'correct-horse-battery' });
-  if (res.status !== 201) throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
+  if (res.status !== 202) throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
+  await completeSignUp(app, agent, email);
+  const me = await agent.get('/api/v1/auth/me');
+  if (me.status !== 200) throw new Error(`sign-in after sign-up failed: ${me.status}`);
   const orgs = await agent.get('/api/v1/organisations');
   const personal = orgs.body.organisations[0];
   return {
     agent,
-    user: res.body.user as { id: string; email: string; name: string },
+    user: me.body.user as { id: string; email: string; name: string },
     email,
     personalOrgId: personal.id as string,
     workspaceId: personal.workspaces[0].id as string,
   };
+}
+
+/**
+ * Sign-up now ends with "check your email". With the log transport the helper follows the emailed link
+ * (exactly like a user); with other transports (SMTP tests) it marks the address confirmed and signs in.
+ */
+export async function completeSignUp(app: INestApplication, agent: request.Agent, email: string) {
+  const mail = app.get(MailService);
+  if (mail.transport instanceof LogTransport) {
+    await mail.drain();
+    const msg = mail.transport.messages(email).filter((m) => m.kind === 'email_verification').pop();
+    const token = msg && /verify-email\?token=([A-Za-z0-9_-]+)/.exec(msg.text)?.[1];
+    if (!token) {
+      // Another test app sharing the database queue delivered it to its own in-memory mailbox.
+      await query(`update users set email_verified_at = now() where email = $1`, [email]);
+      const l = await agent.post('/api/v1/auth/login').set('X-Monty-Client', 'web').send({ email, password: 'correct-horse-battery' });
+      if (l.status !== 200) throw new Error(`login failed: ${l.status}`);
+      return;
+    }
+    const v = await agent.post('/api/v1/auth/verify-email').set('X-Monty-Client', 'web').send({ token });
+    if (v.status !== 200 || !v.body.signedIn) throw new Error(`verify failed: ${v.status} ${JSON.stringify(v.body)}`);
+    return;
+  }
+  await query(`update users set email_verified_at = now() where email = $1`, [email]);
+  const l = await agent.post('/api/v1/auth/login').set('X-Monty-Client', 'web').send({ email, password: 'correct-horse-battery' });
+  if (l.status !== 200) throw new Error(`login failed: ${l.status}`);
 }
 
 /** Convenience: sends a JSON mutation with the required client header. */

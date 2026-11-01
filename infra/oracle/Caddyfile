@@ -1,0 +1,19 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$MONTY_DOMAIN} {
+	encode zstd gzip
+	# Live updates (Server-Sent Events) must not be buffered.
+	reverse_proxy web:3000 {
+		flush_interval -1
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}

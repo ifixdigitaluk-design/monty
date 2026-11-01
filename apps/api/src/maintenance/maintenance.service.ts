@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { sql } from 'drizzle-orm';
 import { DataLifecycleService } from '../account/data-lifecycle.service';
 import { DbService } from '../db/db.service';
+import { FilesService } from '../files/files.service';
 import { trackJob } from '../observability/metrics';
 
 /** Retention periods. Outbox events only need to outlive the longest client reconnect gap (replay window). */
@@ -29,6 +30,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly dbs: DbService,
     private readonly lifecycle: DataLifecycleService,
+    private readonly files: FilesService,
   ) {}
 
   onModuleInit() {
@@ -65,6 +67,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
       automationRuns: await this.purge('automation_runs', sql`created_at < ${days(RETENTION.automationRunDays)}`),
       dataExports: await this.purge('data_exports', sql`expires_at < now()`),
       organisations: await this.lifecycle.purgeDueOrganisations(),
+      files: (await this.files.purge()).deleted,
       emails: await this.purge('email_outbox', sql`status in ('SENT', 'FAILED', 'EXPIRED') and finished_at < ${days(RETENTION.finishedEmailDays)}`),
     };
     this.logger.log(JSON.stringify({ msg: 'maintenance_done', ...result }));

@@ -305,8 +305,10 @@ describe('audit log (B-04)', () => {
     const rows = await query<{ action: string; actor_id: string | null; data: Record<string, unknown> }>(
       `select action, actor_id, data from audit_logs where organisation_id is null order by created_at`,
     );
-    expect(rows.map((r) => r.action)).toEqual(['auth.registered', 'auth.login_failed', 'auth.login_failed', 'auth.login', 'auth.logout']);
-    expect(rows[1]).toMatchObject({ actor_id: u.user.id, data: { email: u.email } });
-    expect(rows[2]).toMatchObject({ actor_id: null, data: {} }); // unknown emails are not stored
+    // Sign-up = registered → email confirmed → signed in by the emailed link.
+    expect(rows.map((r) => r.action)).toEqual(['auth.registered', 'auth.email_verified', 'auth.login', 'auth.login_failed', 'auth.login_failed', 'auth.login', 'auth.logout']);
+    expect(rows[2]).toMatchObject({ data: { via: 'email_link' } });
+    expect(rows[3]).toMatchObject({ actor_id: u.user.id, data: { email: u.email } });
+    expect(rows[4]).toMatchObject({ actor_id: null, data: {} }); // unknown emails are not stored
   });
 });

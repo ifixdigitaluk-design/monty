@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectListItemDto, WorkspaceSummaryDto } from '@monty/validation';
-import { canInWorkspace } from '@monty/domain';
+import { canInOrg, canInWorkspace } from '@monty/domain';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
@@ -23,7 +23,7 @@ export default function WorkspacePage() {
 function WorkspaceView() {
   const id = useSearchParams().get('id');
   const router = useRouter();
-  const { organisations } = useSession();
+  const { organisations, refreshOrganisations } = useSession();
   const [data, setData] = useState<{ projects: ProjectListItemDto[]; workspace: WorkspaceSummaryDto } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -49,7 +49,9 @@ function WorkspaceView() {
   if (!data) return <PageLoading />;
 
   const canCreate = canInWorkspace(data.workspace.role, 'project.create');
-  const isPersonal = organisations.find((o) => o.workspaces.some((w) => w.id === id))?.kind === 'PERSONAL';
+  const org = organisations.find((o) => o.workspaces.some((w) => w.id === id));
+  const isPersonal = org?.kind === 'PERSONAL';
+  const orgAdmin = canInOrg(org?.role, 'workspace.create');
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -62,6 +64,9 @@ function WorkspaceView() {
           <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/docs?ws=${id}`}>
             Documents
           </Link>
+          <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/databases?ws=${id}`}>
+            Databases
+          </Link>
           {canInWorkspace(data.workspace.role, 'workspace.manage') ? (
             <Link className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium hover:bg-surface-2" href={`/automations?ws=${id}`}>
               Automations
@@ -69,6 +74,41 @@ function WorkspaceView() {
           ) : null}
           {canInWorkspace(data.workspace.role, 'workspace.manage') && !isPersonal ? (
             <Button onClick={() => setManaging(true)}>Manage access</Button>
+          ) : null}
+          {orgAdmin && !isPersonal ? (
+            <>
+              <Button
+                onClick={async () => {
+                  const name = window.prompt('New name for this workspace:', data.workspace.name)?.trim();
+                  if (!name || name === data.workspace.name) return;
+                  try {
+                    await api.organisations.renameWorkspace(data.workspace.id, name);
+                    await refreshOrganisations();
+                    await load();
+                  } catch (err) {
+                    window.alert(errorMessage(err));
+                  }
+                }}
+              >
+                Rename
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  const typed = window.prompt(`Deleting “${data.workspace.name}” hides its projects, documents, chat, databases and CRM records for everyone. Type the workspace name to confirm:`);
+                  if (typed === null) return;
+                  try {
+                    await api.organisations.deleteWorkspace(data.workspace.id, typed);
+                    await refreshOrganisations();
+                    router.replace('/home');
+                  } catch (err) {
+                    window.alert(errorMessage(err));
+                  }
+                }}
+              >
+                Delete workspace
+              </Button>
+            </>
           ) : null}
           {canCreate ? (
             <Button variant="primary" onClick={() => setCreating(true)}>

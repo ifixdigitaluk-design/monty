@@ -19,6 +19,10 @@ x-api-env: &api-env
   SMTP_SECURE: ${SMTP_SECURE:-false}
   SMTP_USER: ${SMTP_USER:-}
   SMTP_PASS: ${SMTP_PASS:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_ALLOWED_DOMAINS: ${GOOGLE_ALLOWED_DOMAINS:-}
+  SIGNUP_MODE: ${SIGNUP_MODE:-open}
   AI_PROVIDER: ${AI_PROVIDER:-local}
   AI_API_KEY: ${AI_API_KEY:-}
   AI_MODEL: ${AI_MODEL:-}
@@ -64,6 +68,8 @@ services:
     init: true
     read_only: true
     tmpfs: [/tmp]
+    volumes:
+      - uploads:/data/uploads # persistent: uploaded files (back up together with the database)
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     stop_grace_period: 30s
@@ -89,3 +95,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

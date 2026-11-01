@@ -63,5 +63,5 @@ test('data lifecycle: export my data, delete and restore an organisation, delete
   await page.getByLabel('Email', { exact: true }).fill(email);
   await page.getByLabel('Password').fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByText('Email or password is incorrect')).toBeVisible();
 });

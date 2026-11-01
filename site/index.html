@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monty — downloads</title>
+  <meta name="description" content="Open Monty in your browser or download the Windows app.">
+  <style>
+    :root { --bg: #f7f7f5; --surface: #fff; --fg: #1d1d1b; --muted: #5f5e5a; --line: #e4e3df; --accent: #4f46e5; --accent-fg: #fff; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #161615; --surface: #1f1f1d; --fg: #ecebe7; --muted: #a3a29d; --line: #33322f; --accent: #8b84ff; --accent-fg: #111; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 48px 16px; }
+    h1 { font-size: 32px; margin: 0 0 8px; }
+    p.lead { color: var(--muted); margin: 0 0 32px; font-size: 18px; }
+    .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+    .card h2 { font-size: 18px; margin: 0 0 6px; }
+    .card p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+    a.button { display: inline-block; background: var(--accent); color: var(--accent-fg); text-decoration: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+    a.button:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+    a { color: var(--accent); }
+    details { margin-top: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; }
+    summary { cursor: pointer; font-weight: 600; }
+    ol { padding-left: 20px; }
+    footer { margin-top: 40px; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Monty</h1>
+    <p class="lead">Projects, tasks, docs and team chat in one place.</p>
+    <div class="cards">
+      <section class="card" aria-labelledby="web">
+        <h2 id="web">Use it in your browser</h2>
+        <p>Works on any computer or phone. Nothing to install.</p>
+        <a class="button" href="__MONTY_URL__">Open Monty</a>
+      </section>
+      <section class="card" aria-labelledby="win">
+        <h2 id="win">Windows app</h2>
+        <p>A desktop window for Monty with its own taskbar icon.</p>
+        <a class="button" href="https://github.com/__REPO__/releases/latest">Download for Windows</a>
+      </section>
+    </div>
+    <details>
+      <summary>Installing on Windows</summary>
+      <ol>
+        <li>On the release page, download the file ending in <code>-setup.exe</code> (or <code>.msi</code>).</li>
+        <li>Run it. The app isn’t code-signed yet, so Windows may say <em>“Windows protected your PC”</em>: choose <strong>More info → Run anyway</strong>.</li>
+        <li>Open Monty from the Start menu and sign in with your work account.</li>
+      </ol>
+    </details>
+    <details>
+      <summary>New to Monty?</summary>
+      <p>Ask your administrator for an invitation. Open the link in the invitation email, create your account, then confirm your email address from the message we send you.</p>
+    </details>
+    <footer>Monty internal pilot · <a href="https://github.com/__REPO__">Source on GitHub</a></footer>
+  </main>
+</body>
+</html>

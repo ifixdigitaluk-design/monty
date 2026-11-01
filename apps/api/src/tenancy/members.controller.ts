@@ -8,6 +8,7 @@ import {
   SetWorkspaceMemberSchema,
   UpdateMemberRoleInput,
   UpdateMemberRoleSchema,
+  SetPlanSchema,
 } from '@monty/validation';
 import { getConfig } from '../config';
 import { Auth, AuthContext, Public } from '../common/auth-context';
@@ -56,6 +57,11 @@ export class MembersController {
   @Get('organisations/:orgId/usage')
   async usage(@Auth() auth: AuthContext, @Param('orgId', UuidPipe) orgId: string) {
     return this.members.usage(auth.userId, orgId);
+  }
+
+  @Put('organisations/:orgId/plan')
+  async setPlan(@Auth() auth: AuthContext, @Param('orgId', UuidPipe) orgId: string, @Body(new ZodPipe(SetPlanSchema)) body: { plan: 'FREE' | 'PRO' | 'TEAM' | 'BUSINESS' | 'ENTERPRISE' }, @Req() req: Request) {
+    return this.members.setPlan(auth.userId, orgId, body.plan, clientOf(req));
   }
 
   @Get('organisations/:orgId/audit')

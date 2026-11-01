@@ -44,10 +44,8 @@ describe('registration (AC-1)', () => {
   });
 
   it('sets an HttpOnly SameSite=Lax session cookie and stores only the token hash', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .set('X-Monty-Client', 'web')
-      .send({ email: 'cookie@example.com', name: 'C', password: 'correct-horse-battery' });
+    const { email } = await signUp(app, 'Cookie');
+    const res = await request(app.getHttpServer()).post('/api/v1/auth/login').set('X-Monty-Client', 'web').send({ email, password: 'correct-horse-battery' });
     const cookie = String(res.headers['set-cookie']);
     expect(cookie).toMatch(/monty_session=/);
     expect(cookie).toMatch(/HttpOnly/);
@@ -57,15 +55,16 @@ describe('registration (AC-1)', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('rejects duplicate email (case-insensitive) with 409 and no partial rows', async () => {
+  it('a duplicate email (case-insensitive) gets the same answer as a new one and creates nothing', async () => {
     const { email } = await signUp(app, 'Dup');
     const res = await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/register', {
       email: email.toUpperCase(),
       name: 'Dup2',
       password: 'correct-horse-battery',
     });
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('EMAIL_TAKEN');
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe('check_email');
+    expect(res.headers['set-cookie']).toBeUndefined();
     const orgs = await query('select id from organisations');
     expect(orgs).toHaveLength(1);
   });
@@ -137,10 +136,8 @@ describe('login and sessions (AC-2, AC-10)', () => {
   });
 
   it('accepts a bearer token (desktop clients)', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .set('X-Monty-Client', 'desktop')
-      .send({ email: 'desk@example.com', name: 'D', password: 'correct-horse-battery' });
+    const { email } = await signUp(app, 'Desk');
+    const res = await request(app.getHttpServer()).post('/api/v1/auth/login').set('X-Monty-Client', 'desktop').send({ email, password: 'correct-horse-battery' });
     const token = /monty_session=([^;]+)/.exec(String(res.headers['set-cookie']))![1]!;
     const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`);
     expect(me.status).toBe(200);

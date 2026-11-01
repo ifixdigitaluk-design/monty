@@ -40,6 +40,18 @@ const EnvSchema = z.object({
   METRICS_TOKEN: z.string().min(24).optional().or(z.literal('').transform(() => undefined)),
   /** Optional HTTPS endpoint receiving a JSON POST per unhandled server error (error-tracker intake). */
   ERROR_WEBHOOK_URL: z.url().optional().or(z.literal('').transform(() => undefined)),
+  /** 'open': anyone can sign up. 'invite': only addresses with a pending invitation (plus the very first account). */
+  SIGNUP_MODE: z.enum(['open', 'invite']).default('open'),
+  /** Where uploaded files are stored (a persistent volume in production). */
+  FILES_DIR: z.string().default('.data/uploads'),
+  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(500).default(25),
+  /** Google sign-in (OpenID Connect). Both set = the "Continue with Google" button appears. */
+  GOOGLE_CLIENT_ID: z.string().optional().or(z.literal('').transform(() => undefined)),
+  GOOGLE_CLIENT_SECRET: z.string().optional().or(z.literal('').transform(() => undefined)),
+  /** Optional comma-separated list of email domains allowed to sign in with Google (e.g. your company domain). */
+  GOOGLE_ALLOWED_DOMAINS: z.string().default(''),
+  /** OpenID issuer. Only change it for tests against a local identity provider; refused in production. */
+  OIDC_ISSUER: z.url().default('https://accounts.google.com'),
   /** Version identifier shown in metrics and error reports (e.g. the git commit). */
   RELEASE: z.string().max(100).default('dev'),
   /** Refuse to start unless Postgres row-level security is effective for the API's role. Defaults to on in production. */
@@ -80,6 +92,9 @@ export interface AppConfig {
   metricsToken?: string;
   errorWebhookUrl?: string;
   release: string;
+  signupMode: 'open' | 'invite';
+  files: { dir: string; maxBytes: number };
+  google: { clientId: string; clientSecret: string; issuer: string; allowedDomains: string[] } | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -110,6 +125,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     // Development/test only: a fixed, publicly known key. Never protects real data.
     dataKey = createHash('sha256').update('monty-development-only-key').digest();
   }
+  if (isProduction && e.OIDC_ISSUER.replace(/\/$/, '') !== 'https://accounts.google.com') throw new Error('Invalid environment: OIDC_ISSUER can only be changed outside production');
   if (isProduction && !e.APP_URL.startsWith('https://')) throw new Error('Invalid environment: APP_URL must be https in production');
   return {
     nodeEnv: e.NODE_ENV,
@@ -156,6 +172,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     metricsToken: e.METRICS_TOKEN,
     errorWebhookUrl: e.ERROR_WEBHOOK_URL,
     release: e.RELEASE,
+    signupMode: e.SIGNUP_MODE,
+    files: { dir: e.FILES_DIR, maxBytes: e.MAX_UPLOAD_MB * 1024 * 1024 },
+    google:
+      e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET
+        ? {
+            clientId: e.GOOGLE_CLIENT_ID,
+            clientSecret: e.GOOGLE_CLIENT_SECRET,
+            issuer: e.OIDC_ISSUER.replace(/\/$/, ''),
+            allowedDomains: e.GOOGLE_ALLOWED_DOMAINS.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean),
+          }
+        : null,
   };
 }
 

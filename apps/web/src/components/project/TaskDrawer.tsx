@@ -2,6 +2,8 @@
 
 import type { DependencyDto, MemberDto, MilestoneDto, TaskDto } from '@monty/validation';
 import { CommentThread } from '../CommentThread';
+import { Attachments } from '../Attachments';
+import { useSession } from '@/lib/session';
 import { Select } from '../ui';
 import { FormEvent, useEffect, useState } from 'react';
 import { Button, Field, Input, Textarea } from '../ui';
@@ -44,6 +46,7 @@ export function TaskDrawer({
   onRemoveDependency,
   canModerate,
 }: Props) {
+  const { user: me } = useSession();
   const waitingOn = dependencies.filter((d) => d.taskId === task.id);
   const blocking = dependencies.filter((d) => d.dependsOnTaskId === task.id);
   const titleOf = (id: string) => allTasks.find((t) => t.id === id);
@@ -85,7 +88,7 @@ export function TaskDrawer({
   }
 
   return (
-    <aside
+    <div
       role="dialog"
       aria-label={`Task: ${task.title}`}
       className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-xl"
@@ -216,6 +219,7 @@ export function TaskDrawer({
           />
         </Field>
 
+        <Attachments targetType="task" targetId={task.id} canEdit={canEdit} meId={me.id} isAdmin={canModerate} />
         <CommentThread target={{ taskId: task.id }} members={members} canPost={canEdit} canModerate={canModerate} label="Comments" />
         {task.parentTaskId === null ? (
           <div>
@@ -264,6 +268,6 @@ export function TaskDrawer({
           )}
         </div>
       ) : null}
-    </aside>
+    </div>
   );
 }

@@ -21,7 +21,8 @@ test('automation: build a rule in the UI and see it act on a new task', async ({
   await page.waitForURL(/\/project\?id=/);
   const projectUrl = page.url();
 
-  await page.getByRole('link', { name: 'Personal', exact: true }).click();
+  // The project page's breadcrumb also links to "Personal" once it has loaded; use the sidebar's.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Personal', exact: true }).click();
   await page.getByRole('link', { name: 'Automations' }).click();
   await expect(page.getByRole('heading', { name: 'Automations' })).toBeVisible();
   const automationsUrl = page.url();

@@ -22,9 +22,9 @@ export interface NotifyInput {
   actorId: string;
   organisationId: string;
   workspaceId: string;
-  projectId: string;
-  type: 'mention' | 'assigned' | 'comment' | 'automation';
-  entityType: 'task' | 'comment';
+  projectId: string | null;
+  type: 'mention' | 'assigned' | 'comment' | 'automation' | 'meeting';
+  entityType: 'task' | 'comment' | 'message' | 'crm_activity' | 'meeting';
   entityId: string;
   data: Record<string, unknown>;
   dedupeKey: string;

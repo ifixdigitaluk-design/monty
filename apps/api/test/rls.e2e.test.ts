@@ -120,7 +120,7 @@ describe('row-level security for the runtime role', () => {
   it('account-level audit entries are visible only to their own user', async () => {
     const { alice, bob } = await setup();
     const mine = await asApp<{ action: string }>({ userId: alice.user.id }, `select action from audit_logs where organisation_id is null`);
-    expect(mine.rows.map((r) => r.action)).toEqual(['auth.registered']);
+    expect(mine.rows.map((r) => r.action)).toEqual(['auth.registered', 'auth.email_verified', 'auth.login']);
     const theirs = await asApp({ userId: bob.user.id }, `select 1 from audit_logs where actor_id = $1`, [alice.user.id]);
     expect(theirs.count).toBe(0);
   });

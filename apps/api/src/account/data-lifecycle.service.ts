@@ -102,6 +102,7 @@ export class DataLifecycleService {
   private async collect(userId: string) {
     const q = <T>(query: ReturnType<typeof sql>) => this.dbs.db.execute<T & Record<string, unknown>>(query).then((r) => r.rows);
     const [user] = await q(sql`select id, email, name, email_verified_at, created_at from users where id = ${userId}`);
+    const signInMethods = await this.dbs.runAsSystem(() => q(sql`select provider, email, created_at, last_used_at from user_identities where user_id = ${userId}`));
     const sessions = await q(sql`select created_at, last_seen_at, expires_at, revoked_at, ip, user_agent from sessions where user_id = ${userId} order by created_at`);
     const organisations = await q(sql`
       select o.id, o.name, o.kind, m.role, m.created_at as joined_at from organisation_memberships m
@@ -115,6 +116,27 @@ export class DataLifecycleService {
     const projects = await q(sql`select id, name, objective, description, created_at from projects where created_by_id = ${userId} and deleted_at is null`);
     const comments = await q(sql`select id, project_id, task_id, body, created_at, edited_at from comments where author_id = ${userId} and deleted_at is null order by created_at`);
     const documents = await q(sql`select id, title, body, created_at, updated_at from documents where created_by_id = ${userId} and deleted_at is null`);
+    const messages = await q(sql`
+      select m.id, c.name as channel, c.kind as channel_kind, m.parent_id, m.body, m.created_at, m.edited_at
+      from messages m join channels c on c.id = m.channel_id where m.author_id = ${userId} and m.deleted_at is null order by m.created_at`);
+    const databaseRows = await q(sql`
+      select r.id, d.name as database, r.title, r.values, r.body, r.created_at, r.updated_at
+      from database_rows r join databases d on d.id = r.database_id
+      where r.created_by_id = ${userId} and r.deleted_at is null and d.deleted_at is null order by r.created_at`);
+    const hrProfiles = (
+      await q<{ organisation_id: string; private_data: string | null }>(sql`
+        select organisation_id, job_title, department, manager_id, start_date, end_date, employment_type, location, work_phone, annual_leave_days, private_data
+        from hr_profiles where user_id = ${userId}`)
+    ).map(({ private_data, ...p }) => {
+      let personal: Record<string, unknown> = {};
+      try {
+        personal = private_data ? (JSON.parse(decrypt(this.config.dataKey, private_data, `hr:${p.organisation_id}:${userId}`).toString()) as Record<string, unknown>) : {};
+      } catch {
+        personal = { error: 'could not be decrypted' };
+      }
+      return { ...p, personal };
+    });
+    const leave = await q(sql`select organisation_id, type, start_date, end_date, half_day, days, reason, status, decided_at, created_at from hr_leave_requests where user_id = ${userId} order by start_date`);
     const notifications = await q(sql`select type, entity_type, data, created_at, read_at from notifications where user_id = ${userId} order by created_at`);
     const aiRequests = await q(sql`select id, project_id, status, provider, input, created_at from ai_proposals where requested_by_id = ${userId}`);
     const automations = await q(sql`select id, name, trigger, conditions, actions, enabled, created_at from automation_rules where created_by_id = ${userId} and deleted_at is null`);
@@ -128,6 +150,7 @@ export class DataLifecycleService {
       note:
         'Your account and the content you created or were assigned in organisations you still belong to. Content other people created, and organisations you have left, are not included.',
       account: user,
+      linkedSignIns: signInMethods,
       sessions,
       organisations,
       workspaceMemberships,
@@ -135,6 +158,10 @@ export class DataLifecycleService {
       tasks,
       comments,
       documentsCreated: documents,
+      chatMessages: messages,
+      hrProfiles,
+      leaveRequests: leave,
+      databaseRowsCreated: databaseRows,
       notifications,
       aiRequests,
       automations,
@@ -214,6 +241,8 @@ export class DataLifecycleService {
       await db.execute(sql`update tasks set assignee_id = null, version = version + 1 where assignee_id = ${userId}`);
       await db.execute(sql`update automation_rules set enabled = false where created_by_id = ${userId}`);
       await db.execute(sql`delete from workspace_memberships where user_id = ${userId}`);
+      await db.execute(sql`delete from channel_members where user_id = ${userId}`);
+      await db.execute(sql`delete from message_reactions where user_id = ${userId}`);
       await db.execute(sql`delete from organisation_memberships where user_id = ${userId}`);
       await db.execute(sql`delete from notifications where user_id = ${userId}`);
       await db.execute(sql`delete from invitations where lower(email) = lower(${user.email}) and accepted_at is null`);
@@ -221,6 +250,9 @@ export class DataLifecycleService {
       // 3. Personal and security data.
       await db.execute(sql`delete from sessions where user_id = ${userId}`);
       await db.execute(sql`delete from user_tokens where user_id = ${userId}`);
+      await db.execute(sql`delete from user_identities where user_id = ${userId}`);
+      await db.execute(sql`delete from login_challenges where user_id = ${userId}`);
+      await db.execute(sql`delete from mfa_recovery_codes where user_id = ${userId}`);
       await db.execute(sql`delete from data_exports where user_id = ${userId}`);
       await db.execute(sql`delete from email_outbox where user_id = ${userId} or lower(to_address) = lower(${user.email})`);
       // Account-level security events (sign-ins, resets…) are deleted; organisation audit entries keep the action and
@@ -234,7 +266,7 @@ export class DataLifecycleService {
       // 4. The user row stays as a tombstone so foreign keys (authorship) remain valid; nothing identifying is kept.
       await db
         .update(users)
-        .set({ email: `deleted-${userId}@deleted.invalid`, name: 'Deleted user', passwordHash: '!', emailVerifiedAt: null, deletedAt: new Date() })
+        .set({ email: `deleted-${userId}@deleted.invalid`, name: 'Deleted user', passwordHash: '!', emailVerifiedAt: null, mfaSecret: null, mfaEnabledAt: null, mfaLastStep: null, deletedAt: new Date() })
         .where(eq(users.id, userId));
       await this.audit.record({ actorId: userId, action: 'account.deleted', targetType: 'user', targetId: userId, data: { erasedOrganisations: solo.rows.length } });
       this.logger.log(JSON.stringify({ msg: 'account_deleted', erasedOrganisations: solo.rows.length }));

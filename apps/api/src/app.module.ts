@@ -5,6 +5,8 @@ import { RequestContextInterceptor } from './db/request-context.interceptor';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { MfaService } from './auth/mfa.service';
+import { GoogleService } from './auth/google.service';
 import { Public } from './common/auth-context';
 import { CsrfGuard, SessionGuard } from './common/guards';
 import { AppConfig, CONFIG } from './config';
@@ -14,7 +16,7 @@ import { ProjectsController } from './projects/projects.controller';
 import { ProjectsService } from './projects/projects.service';
 import { TasksService } from './tasks/tasks.service';
 import { AccessService } from './tenancy/access.service';
-import { OrganisationsController } from './tenancy/organisations.controller';
+import { OrganisationsController, WorkspacesController } from './tenancy/organisations.controller';
 import { OrganisationsService } from './tenancy/organisations.service';
 import { AuditService } from './audit/audit.service';
 import { MembersController } from './tenancy/members.controller';
@@ -33,6 +35,18 @@ import { AutomationsController } from './automations/automations.controller';
 import { AutomationsService } from './automations/automations.service';
 import { DataLifecycleController } from './account/data-lifecycle.controller';
 import { DataLifecycleService } from './account/data-lifecycle.service';
+import { ChatController } from './chat/chat.controller';
+import { ChatService } from './chat/chat.service';
+import { FilesController } from './files/files.controller';
+import { FilesService } from './files/files.service';
+import { DatabasesController } from './databases/databases.controller';
+import { DatabasesService } from './databases/databases.service';
+import { CrmController } from './crm/crm.controller';
+import { CrmService } from './crm/crm.service';
+import { HrController } from './hr/hr.controller';
+import { MeetingsController } from './meetings/meetings.controller';
+import { MeetingsService } from './meetings/meetings.service';
+import { HrService } from './hr/hr.service';
 import { MetricsController } from './observability/metrics.controller';
 import { MaintenanceService } from './maintenance/maintenance.service';
 import { EntitlementsService } from './billing/entitlements.service';
@@ -86,6 +100,7 @@ export class AppModule {
         HealthController,
         AuthController,
         OrganisationsController,
+        WorkspacesController,
         ProjectsController,
         MembersController,
         CollaborationController,
@@ -96,12 +111,20 @@ export class AppModule {
         AutomationsController,
         DataLifecycleController,
         MetricsController,
+        ChatController,
+        FilesController,
+        DatabasesController,
+        CrmController,
+        HrController,
+        MeetingsController,
         // Development-only mailbox: never registered in production or with a real mail provider.
         ...(!config.isProduction && config.mail.transport === 'log' ? [DevMailboxController] : []),
       ],
       providers: [
         { provide: CONFIG, useValue: config },
         AuthService,
+        MfaService,
+        GoogleService,
         AuditService,
         MailService,
         AccountRecoveryService,
@@ -114,6 +137,12 @@ export class AppModule {
         AutomationsService,
         MaintenanceService,
         DataLifecycleService,
+        ChatService,
+        FilesService,
+        DatabasesService,
+        CrmService,
+        HrService,
+        MeetingsService,
         EntitlementsService,
         AccessService,
         OrganisationsService,

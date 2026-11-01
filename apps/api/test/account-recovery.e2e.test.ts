@@ -35,45 +35,58 @@ const lastMail = (to: string, kind: string) => {
 const settle = () => app.get(MailService).drain();
 
 describe('email verification (B-05)', () => {
-  it('sign-up sends a verification link that verifies the account once', async () => {
-    const u = await signUp(app, 'Vera');
-    expect((await u.agent.get('/api/v1/auth/me')).body.user.emailVerified).toBe(false);
+  it('sign-up emails a link that confirms the address and signs the user in, once', async () => {
+    const email = `vera-${Date.now()}@example.com`;
+    const agent = request.agent(app.getHttpServer());
+    const reg = await send(agent, 'post', '/api/v1/auth/register', { email, name: 'Vera', password: 'correct-horse-battery', next: '/invite?token=abc' });
+    expect(reg.status).toBe(202);
+    expect((await agent.get('/api/v1/auth/me')).status).toBe(401); // not signed in until the link is used
+
+    // Unconfirmed accounts cannot sign in with the password yet.
+    const early = await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/login', { email, password: 'correct-horse-battery' });
+    expect(early.status).toBe(403);
+    expect(early.body.error.code).toBe('EMAIL_NOT_VERIFIED');
 
     await settle();
-    const mail = lastMail(u.email, 'email_verification');
+    const mail = lastMail(email, 'email_verification');
     expect(mail.subject).toBe('Confirm your email for Monty');
-    const token = tokenFrom(mail.text, '/verify-email');
     expect(mail.text).toContain('http://localhost:3000/verify-email?token=');
+    expect(mail.text).toContain('&next=%2Finvite%3Ftoken%3Dabc');
+    const token = tokenFrom(mail.text, '/verify-email');
 
-    expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token })).status).toBe(204);
-    expect((await u.agent.get('/api/v1/auth/me')).body.user.emailVerified).toBe(true);
+    const v = await send(agent, 'post', '/api/v1/auth/verify-email', { token });
+    expect(v.status).toBe(200);
+    expect(v.body).toMatchObject({ verified: true, signedIn: true, user: { email, emailVerified: true } });
+    expect((await agent.get('/api/v1/auth/me')).body.user.emailVerified).toBe(true);
     // Single use.
     expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token })).status).toBe(400);
   });
 
-  it('resend issues a new link and invalidates the old one', async () => {
-    const u = await signUp(app, 'Res');
+  it('an unconfirmed account gets a new link when signing in, at most once per 5 minutes', async () => {
+    const email = `res-${Date.now()}@example.com`;
+    await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/register', { email, name: 'Res', password: 'correct-horse-battery' });
     await settle();
-    const first = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
-    const r = await send(u.agent, 'post', '/api/v1/auth/verify-email/resend');
-    expect(r.status).toBe(202);
-    expect(r.body).toEqual({ sent: true });
+    const first = tokenFrom(lastMail(email, 'email_verification').text, '/verify-email');
+    await query(`update user_tokens set created_at = now() - interval '10 minutes'`);
+    for (let i = 0; i < 3; i++) await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/login', { email, password: 'correct-horse-battery' });
     await settle();
-    const second = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
+    expect(mailbox.messages(email).filter((m) => m.kind === 'email_verification')).toHaveLength(2);
+    const second = tokenFrom(lastMail(email, 'email_verification').text, '/verify-email');
     expect(second).not.toBe(first);
-    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token: first })).status).toBe(400);
-    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token: second })).status).toBe(204);
-    // Nothing to resend once verified.
-    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email/resend')).body).toEqual({ sent: false });
+    expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token: first })).status).toBe(400);
+    expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token: second })).status).toBe(200);
+    const u = await signUp(app, 'Done');
+    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email/resend')).body).toEqual({ sent: false }); // nothing to resend once verified
   });
 
   it('rejects expired and malformed tokens', async () => {
-    const u = await signUp(app, 'Exp');
+    const email = `exp-${Date.now()}@example.com`;
+    await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/register', { email, name: 'Exp', password: 'correct-horse-battery' });
     await settle();
-    const token = tokenFrom(lastMail(u.email, 'email_verification').text, '/verify-email');
+    const token = tokenFrom(lastMail(email, 'email_verification').text, '/verify-email');
     await query(`update user_tokens set expires_at = now() - interval '1 second'`);
-    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token })).status).toBe(400);
-    expect((await send(u.agent, 'post', '/api/v1/auth/verify-email', { token: 'short' })).status).toBe(400);
+    expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token })).status).toBe(400);
+    expect((await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/verify-email', { token: 'short' })).status).toBe(400);
   });
 
   it('only stores token hashes', async () => {
@@ -151,7 +164,7 @@ describe('password reset (B-06)', () => {
     const token = tokenFrom(lastMail(u.email, 'password_reset').text, '/reset-password');
     await send(request.agent(app.getHttpServer()), 'post', '/api/v1/auth/password-reset/confirm', { token, password: 'new-password-123' });
     const rows = await query<{ action: string }>(`select action from audit_logs where actor_id = $1 order by created_at`, [u.user.id]);
-    expect(rows.map((r) => r.action)).toEqual(['auth.registered', 'auth.password_reset_requested', 'auth.password_reset']);
+    expect(rows.map((r) => r.action)).toEqual(['auth.registered', 'auth.email_verified', 'auth.login', 'auth.password_reset_requested', 'auth.password_reset']);
   });
 });
 

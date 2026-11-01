@@ -13,3 +13,4 @@ next-env.d.ts
 e2e/screenshots
 apps/desktop/src-tauri/target
 apps/desktop/src-tauri/gen
+.data

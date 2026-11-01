@@ -30,27 +30,56 @@ export class InsightsService {
         select 'project' as type, p.id, p.name as title,
                ts_headline('simple', coalesce(nullif(p.objective, ''), p.description, p.name), q.query, ${opts}) as snippet,
                p.id::text as project_id, p.name as project_name, null::uuid as task_id, w.id as workspace_id, w.name as workspace_name,
-               ts_rank(p.search, q.query) * 1.2 as rank
+               ts_rank(p.search, q.query) * 1.2 as rank, null::uuid as channel_id, null::uuid as parent_id
         from projects p join workspaces w on w.id = p.workspace_id, q
         where p.search @@ q.query and p.deleted_at is null and p.workspace_id in (${wsList})
         union all
         select 'task', t.id, t.title,
                ts_headline('simple', coalesce(nullif(t.description, ''), t.title), q.query, ${opts}),
-               p.id::text, p.name, t.id, w.id, w.name, ts_rank(t.search, q.query)
+               p.id::text, p.name, t.id, w.id, w.name, ts_rank(t.search, q.query), null::uuid, null::uuid
         from tasks t join projects p on p.id = t.project_id and p.deleted_at is null join workspaces w on w.id = t.workspace_id, q
         where t.search @@ q.query and t.deleted_at is null and t.workspace_id in (${wsList})
         union all
         select 'comment', c.id, coalesce(t.title, p.name),
                ts_headline('simple', regexp_replace(c.body, '<@[0-9a-fA-F-]{36}>', '@…', 'g'), q.query, ${opts}),
-               p.id::text, p.name, c.task_id, w.id, w.name, ts_rank(c.search, q.query) * 0.8
+               p.id::text, p.name, c.task_id, w.id, w.name, ts_rank(c.search, q.query) * 0.8, null::uuid, null::uuid
         from comments c join projects p on p.id = c.project_id and p.deleted_at is null
              left join tasks t on t.id = c.task_id join workspaces w on w.id = c.workspace_id, q
         where c.search @@ q.query and c.deleted_at is null and (t.id is null or t.deleted_at is null) and c.workspace_id in (${wsList})
         union all
         select 'document', d.id, d.title,
                ts_headline('simple', coalesce(nullif(d.body, ''), d.title), q.query, ${opts}),
-               coalesce(d.project_id::text, ''), coalesce(p.name, w.name), null::uuid, w.id, w.name, ts_rank(d.search, q.query)
+               coalesce(d.project_id::text, ''), coalesce(p.name, w.name), null::uuid, w.id, w.name, ts_rank(d.search, q.query), null::uuid, null::uuid
         from documents d join workspaces w on w.id = d.workspace_id left join projects p on p.id = d.project_id, q
+        where d.search @@ q.query and d.deleted_at is null and d.workspace_id in (${wsList})
+        union all
+        -- Chat messages: row-level security limits these to channels the user can see (public, or member of).
+        select 'message', m.id, case when ch.kind = 'dm' then 'Direct message' else '#' || ch.name end,
+               ts_headline('simple', regexp_replace(m.body, '<@[0-9a-fA-F-]{36}>', '@…', 'g'), q.query, ${opts}),
+               '', w.name, null::uuid, w.id, w.name, ts_rank(m.search, q.query) * 0.7, ch.id, m.parent_id
+        from messages m join channels ch on ch.id = m.channel_id join workspaces w on w.id = m.workspace_id, q
+        where m.search @@ q.query and m.deleted_at is null and m.workspace_id in (${wsList})
+        union all
+        -- Database rows (title and page). The database id travels in channel_id.
+        select 'database_row', r.id, coalesce(nullif(r.title, ''), 'Untitled'),
+               ts_headline('simple', coalesce(nullif(r.body, ''), r.title), q.query, ${opts}),
+               '', db.name, null::uuid, w.id, w.name, ts_rank(r.search, q.query) * 0.9, db.id, null::uuid
+        from database_rows r join databases db on db.id = r.database_id and db.deleted_at is null join workspaces w on w.id = r.workspace_id, q
+        where r.search @@ q.query and r.deleted_at is null and r.workspace_id in (${wsList})
+        union all
+        select 'crm_company', c.id, c.name, ts_headline('simple', coalesce(nullif(c.notes, ''), c.industry, c.name), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(c.search, q.query), null::uuid, null::uuid
+        from crm_companies c join workspaces w on w.id = c.workspace_id, q
+        where c.search @@ q.query and c.deleted_at is null and c.workspace_id in (${wsList})
+        union all
+        select 'crm_contact', c.id, c.name, ts_headline('simple', concat_ws(' · ', nullif(c.job_title, ''), nullif(c.email, ''), nullif(c.notes, '')), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(c.search, q.query), null::uuid, null::uuid
+        from crm_contacts c join workspaces w on w.id = c.workspace_id, q
+        where c.search @@ q.query and c.deleted_at is null and c.workspace_id in (${wsList})
+        union all
+        select 'crm_deal', d.id, d.title, ts_headline('simple', coalesce(nullif(d.notes, ''), d.title), q.query, ${opts}),
+               '', 'CRM', null::uuid, w.id, w.name, ts_rank(d.search, q.query), null::uuid, null::uuid
+        from crm_deals d join workspaces w on w.id = d.workspace_id, q
         where d.search @@ q.query and d.deleted_at is null and d.workspace_id in (${wsList})
       ) r
       order by rank desc, title asc
@@ -65,6 +94,8 @@ export class InsightsService {
       taskId: r.task_id ?? null,
       workspaceId: r.workspace_id!,
       workspaceName: r.workspace_name!,
+      ...(r.type === 'message' ? { channelId: r.channel_id!, parentId: r.parent_id ?? null } : {}),
+      ...(r.type === 'database_row' ? { databaseId: r.channel_id! } : {}),
     }));
   }
 

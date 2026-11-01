@@ -33,7 +33,7 @@ export class DocumentsService {
     return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.toISOString() }));
   }
 
-  private async load(userId: string, id: string, action: 'workspace.read' | 'task.update') {
+  async load(userId: string, id: string, action: 'workspace.read' | 'task.update') {
     const doc = await this.dbs.db.query.documents.findFirst({ where: and(eq(documents.id, id), isNull(documents.deletedAt)) });
     if (!doc) throw notFound('Document');
     const access = await this.access.workspaceAccess(userId, doc.workspaceId);

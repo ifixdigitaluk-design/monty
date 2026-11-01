@@ -121,5 +121,64 @@ Webhook requests: `POST` JSON `{event, rule, task, runId}` with `X-Monty-Signatu
 
 New error codes: **503 `SERVICE_UNAVAILABLE`** (database busy/unreachable; `Retry-After: 2`; nothing was saved) and **503 `REQUEST_TIMEOUT`** (handler exceeded `REQUEST_TIMEOUT_MS`; the change may have been saved — refresh before retrying). `invitation.emailSent` now means "queued for delivery".
 
+### Staff pilot — sign-up, two-factor, chat, files, databases
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/auth/register` | public | **always 202** `{status:"check_email"}`, no cookie, same body whether or not the email exists (owner of an existing account gets an "account exists" email, ≤1/h). `SIGNUP_MODE=invite` allows only the first account and invited addresses. Optional `next` (relative path) |
+| POST | `/auth/verify-email` | public + token | 200 `{verified, signedIn, user?}`; signs in unless the account has two-factor on. Links last 48 h, single use |
+| POST | `/auth/login` | public | 403 `EMAIL_NOT_VERIFIED` until confirmed (resends at most every 5 min). Two-factor accounts get `{mfaToken}` instead of a session. 10 failures in 15 min lock the account for 15 min |
+| POST | `/auth/login/mfa` | `{mfaToken, code}` or `{mfaToken, recoveryCode}` | challenge lasts 5 min, 5 attempts; a TOTP step can't be reused |
+| GET | `/auth/mfa` | self | `{enabled, enabledAt, recoveryCodesRemaining}` |
+| POST | `/auth/mfa/setup` · `/mfa/enable` · `/mfa/disable` · `/mfa/recovery-codes` | self + password (setup/disable/regenerate) and a current code | setup returns secret + QR (data URL); enable returns 10 recovery codes once |
+| GET | `/auth/providers` | public | `{google: boolean}` |
+| GET | `/auth/google/start?next=` | public | 302 to Google with `state`, `nonce`, PKCE S256; attempt sealed in an HttpOnly cookie (10 min, path `/api/v1/auth/google`) |
+| GET | `/auth/google/callback` | public (from Google) | verifies state, exchanges the code, checks the RS256 ID token (issuer, audience, expiry, nonce, `email_verified`, optional `GOOGLE_ALLOWED_DOMAINS`). 302 to `next` with a session; to `/login?mfa=…` for two-step accounts; to `/login?error=google_*` on failure. Links by Google subject, then by verified email; new accounts follow `SIGNUP_MODE` |
+| GET/POST | `/workspaces/:id/channels` | workspace member / `task.create` | public or private channels; list includes unread and mention counts |
+| POST | `/workspaces/:id/dms` | workspace member | opens (or reuses) a direct message with the given members |
+| PATCH | `/channels/:id` | channel creator or workspace admin | name, topic, archived |
+| POST | `/channels/:id/join` · `/leave` | public channels only for join | |
+| GET/POST/DELETE | `/channels/:id/members[/:userId]` | channel member adds; removing others needs channel creator or workspace admin | private channels have a member limit; not for DMs |
+| GET/POST | `/channels/:id/messages` | channel member | pages of 50 (`?before=`); post is idempotent by `id`; `@` mentions notify; up to 10 `attachmentIds` |
+| GET | `/messages/:id/thread` | channel member | replies |
+| PATCH/DELETE | `/messages/:id` | author (delete: also channel creator or workspace admin) | delete also removes the message's files |
+| POST | `/messages/:id/reactions` | channel member | toggles one of the allowed emoji |
+| POST | `/channels/:id/read` · GET `/me/chat/unread` | self | |
+| POST | `/attachments?targetType=task\|document\|channel&targetId=` | edit rights on the target (chat: channel member) | raw bytes `application/octet-stream`, `X-Filename` (URL-encoded); `MAX_UPLOAD_MB` (default 25) → 413; 60 uploads/min |
+| GET | `/tasks/:id/attachments` · `/documents/:id/attachments` | read rights on the target | |
+| GET | `/attachments/:id[?inline=1]` | read rights | type detected from content; only PNG/JPEG/GIF/WebP/PDF inline, everything else a sandboxed download (`nosniff`, `CSP: sandbox`) |
+| DELETE | `/attachments/:id` | uploader or workspace admin | |
+| GET/POST | `/workspaces/:id/databases` | read / `task.create` | create starts with a Status select, a table and a board, or takes `import: {fields, rows}` (≤1000 rows; send more with `/import`) |
+| GET/PATCH/DELETE | `/databases/:id` | read / `task.create` | GET returns fields, views and all rows (no page bodies; max 10,000 rows) |
+| GET | `/databases/:id/export.csv` | read | UTF-8 with BOM; formula-like cells prefixed with `'` |
+| POST | `/databases/:id/import` | `task.update` | `{rows: [{title, cells[]}]}`, ≤1000 per request; cells follow field order; text that doesn't fit a field is left empty |
+| POST | `/databases/:id/fields` · PATCH/DELETE `/database-fields/:id` | `task.create` | types `text, number, select, multi_select, date, checkbox, person, url`; type can't be changed; removing an option clears it from rows; deleting a field removes its cells and view references; max 50 fields |
+| POST | `/databases/:id/views` · PATCH/DELETE `/database-views/:id` | `task.create` | `layout` table/board; `config {filters, match, sorts, groupBy, hiddenFieldIds}`; a board needs a select field; the last view can't be deleted |
+| POST | `/databases/:id/rows` | `task.update` | idempotent by `id`; values validated per field type (people must be workspace members) |
+| GET/PATCH/DELETE | `/database-rows/:id` | read / `task.update` | PATCH merges only the cells sent (`null` clears); changing `body` needs `expectedVersion` = the row's `bodyVersion` (409 `VERSION_CONFLICT` otherwise) |
+
+| GET | `/workspaces/:id/crm/summary` | read | pipeline per currency (open, weighted, won this month), win rate, counts, my open follow-ups |
+| GET/POST | `/workspaces/:id/crm/companies` · `/contacts` · `/deals` · `/quotes` | read / `task.update` | lists support `?q=` (full text); create is idempotent by `id`; links must be in the same workspace; owners must be members |
+| GET/PATCH/DELETE | `/crm/companies/:id` · `/crm/contacts/:id` · `/crm/deals/:id` · `/crm/quotes/:id` | read / `task.update` | GET company/contact/deal include related records and the activity timeline. Deal stage → won/lost sets `closedAt`. Quote totals are computed by the server from `lines` (minor units); quotes are numbered `Q-0001…` per workspace; accepted quotes can't change lines or currency |
+| GET/POST | `/workspaces/:id/crm/activities[?mine=1&open=1]` | read / `task.update` | types `note, call, meeting, email, task`; must link to a company, contact or deal; `dueAt` makes it a follow-up (assignee notified) |
+| PATCH/DELETE | `/crm/activities/:id` | `task.update` (delete: author or workspace admin) | `{done}` marks a follow-up complete |
+
+| GET | `/organisations/:id/hr/me` · `/hr/inbox` | team org member (not guest) | my HR role, the people I manage; leave waiting for my decision |
+| GET | `/organisations/:id/hr/people` · `/people/:userId` | member | directory for all; `private` only for the person, HR admins and their management chain (salary only for the person and HR) |
+| PATCH | `/organisations/:id/hr/people/:userId` | HR admin (job fields, pay, notes); the person (own personal details) | reporting loops refused; private part encrypted at rest |
+| PUT | `/organisations/:id/hr/admins` | owner | `{userId, hrAdmin}` |
+| GET/POST | `/organisations/:id/hr/leave` | member | weekend days not counted; overlapping leave refused (409); HR may record leave for others (sickness approved at once); type shown as `away` and reasons hidden for people without access |
+| POST | `/organisations/:id/hr/leave/:id/decision` · `/cancel` | management chain or HR (never yourself) · requester or HR | |
+| GET/POST | `/organisations/:id/hr/checklists` · POST `/checklists/:id/items` · PATCH `/checklist-items/:id` · DELETE `/checklists/:id` | visible to HR, assignees, the person and their manager; HR creates; assignee or HR ticks | onboarding/offboarding templates with steps for HR, manager and IT |
+| GET/POST | `/organisations/:id/hr/people/:userId/documents` | private-details viewers / HR uploads (raw bytes, ≤10 MB) | encrypted on disk; GET `/hr/documents/:id` downloads (audited), sandboxed |
+| GET/POST/PATCH/DELETE | `/organisations/:id/hr/reviews[/:id]` | HR or the management chain write; the person reads once shared | content encrypted at rest; `share: true` locks it; private notes never returned to the person |
+
+| DELETE | `/channels/:id` | channel creator, workspace admin or org owner/admin | deletes the channel and its messages; `ChannelDto.canManage` says who may |
+| PATCH/DELETE | `/workspaces/:id` | org owner/admin | rename `{name}`; delete `{confirmName}` (not personal, not the last one) |
+| PUT | `/organisations/:id/plan` | owner | `{plan}`: FREE, PRO, TEAM, BUSINESS or ENTERPRISE (no payment; audited) |
+| GET/POST | `/workspaces/:id/meetings[?from&to]` | read / `task.create` | empty `videoUrl` = automatic Jitsi link; attendees must be workspace members and are notified |
+| GET/PATCH/DELETE | `/meetings/:id` | read / organiser or workspace admin (attendees: `minutes`, `actionItems` only) | `cancelled: true` notifies attendees; GET `/meetings/:id/ics` = calendar file |
+
+Live updates: chat events (`event: chat`) go only to people who can see the channel; database events (`event: database`) go to the workspace. Both are pointers — clients refetch through the endpoints above. Search (`GET /search`) also returns chat messages (`type: message`) and database rows (`type: database_row`, with `databaseId`).
+
 ## Not implemented (planned)
-Attachments (pre-signed object storage), saved views, custom fields, user databases, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.
+Object storage for files (they're on the server's disk today), malware scanning of uploads, database relations/rollups/formulas, integrations (OAuth: GitHub, Google, Slack), billing provider webhooks, public API tokens, desktop token exchange via deep link, WebSocket transport (SSE is used), Yjs collaborative editing.

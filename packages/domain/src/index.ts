@@ -6,3 +6,6 @@ export * from './membership';
 export * from './dependencies';
 export * from './search';
 export * from './entitlements';
+export * from './databases';
+export * from './crm';
+export * from './hr';

@@ -41,6 +41,10 @@ ENV NODE_ENV=production API_PORT=4000
 RUN groupadd --system --gid 10001 monty && useradd --system --uid 10001 --gid monty --no-create-home --shell /usr/sbin/nologin monty
 WORKDIR /app
 COPY --from=build --chown=root:root /out/api /app
+# Uploaded files live on a volume mounted here; the directory is owned by the runtime user so a fresh named volume
+# inherits that ownership.
+RUN mkdir -p /data/uploads && chown 10001:10001 /data/uploads
+ENV FILES_DIR=/data/uploads
 # Code is root-owned and read-only for the runtime user; the API writes nothing to disk (logs go to stdout).
 USER 10001:10001
 EXPOSE 4000
