@@ -232,14 +232,17 @@ export class HrService {
       if (wouldCreateManagerCycle(subjectId, pub.managerId, c.managerOf)) throw badRequest('That would make a loop in the reporting line.', [{ path: 'managerId', message: 'Creates a loop' }]);
     }
     if (pub.startDate && pub.endDate && pub.endDate < pub.startDate) throw badRequest('The end date is before the start date', [{ path: 'endDate', message: 'Before start' }]);
-    const [existing] = await this.db.select().from(hrProfiles).where(and(eq(hrProfiles.organisationId, orgId), eq(hrProfiles.userId, subjectId)));
+    // Make sure the row exists, then lock it: two saves at once (e.g. address and salary) would otherwise both read the
+    // old private data, merge in memory, and the later write would wipe the earlier one's change.
+    await this.db.insert(hrProfiles).values({ organisationId: orgId, userId: subjectId, updatedById: c.me }).onConflictDoNothing({ target: [hrProfiles.organisationId, hrProfiles.userId] });
+    const [existing] = await this.db.select().from(hrProfiles).where(and(eq(hrProfiles.organisationId, orgId), eq(hrProfiles.userId, subjectId))).for('update');
+    if (!existing) throw notFound('Person');
     const values: Partial<HrProfile> = { ...pub, updatedById: c.me } as Partial<HrProfile>;
     if (priv) {
-      const merged = { ...this.openPrivate(c, subjectId, existing?.privateData ?? null), ...priv };
+      const merged = { ...this.openPrivate(c, subjectId, existing.privateData), ...priv };
       values.privateData = this.sealPrivate(c, subjectId, merged);
     }
-    if (existing) await this.db.update(hrProfiles).set(values).where(eq(hrProfiles.id, existing.id));
-    else await this.db.insert(hrProfiles).values({ organisationId: orgId, userId: subjectId, ...values });
+    await this.db.update(hrProfiles).set({ ...values, updatedAt: new Date() }).where(eq(hrProfiles.id, existing.id));
     await this.audit.recordSafely({
       organisationId: orgId,
       actorId: c.me,

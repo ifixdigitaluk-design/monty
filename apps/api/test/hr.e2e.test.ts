@@ -92,6 +92,22 @@ const mon = (() => {
 })();
 const at = (n: number) => new Date(mon.getTime() + n * 86400_000).toISOString().slice(0, 10);
 
+describe('HR: saves at the same time', () => {
+  it('two private-detail saves sent together both stick (no lost update), on a new and an existing profile', async () => {
+    const { org, hr, olga, pat, otto } = await company();
+    await query(`insert into organisation_memberships (organisation_id, user_id, role) values ($1, $2, 'MEMBER')`, [org.id, otto.user.id]); // no HR profile yet
+    for (const who of [otto, pat]) {
+      const [a, b, c] = await Promise.all([
+        send(olga.agent, 'patch', hr(`/people/${who.user.id}`), { private: { homeAddress: '2 Main St' } }),
+        send(olga.agent, 'patch', hr(`/people/${who.user.id}`), { private: { salary: 3_000_000 } }),
+        send(olga.agent, 'patch', hr(`/people/${who.user.id}`), { private: { personalPhone: '07700 900001' } }),
+      ]);
+      expect([a.status, b.status, c.status]).toEqual([200, 200, 200]);
+      expect((await olga.agent.get(hr(`/people/${who.user.id}`))).body.profile.private).toMatchObject({ homeAddress: '2 Main St', salary: 3_000_000, personalPhone: '07700 900001' });
+    }
+  });
+});
+
 describe('HR: leave', () => {
   it('request → manager notified → approve; balance; overlap refused; sickness hidden from colleagues', async () => {
     const { hr, olga, lee, dev, pat } = await company();
