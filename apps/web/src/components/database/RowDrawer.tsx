@@ -39,6 +39,10 @@ export function RowDrawer({
   const latest = useRef('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // onClose comes from the parent as a new function on every render; keep it out of load's dependencies,
+  // otherwise every parent re-render reloads the row and overwrites what the user is typing.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const load = useCallback(async () => {
     try {
       const { row: r } = await api.databases.getRow(rowId);
@@ -50,9 +54,9 @@ export function RowDrawer({
       setMode(canEdit && !(r.body ?? '').trim() ? 'write' : 'preview');
     } catch (err) {
       toast({ tone: 'error', message: errorMessage(err) });
-      onClose();
+      closeRef.current();
     }
-  }, [rowId, canEdit, toast, onClose]);
+  }, [rowId, canEdit, toast]);
   useEffect(() => {
     void load();
   }, [load]);

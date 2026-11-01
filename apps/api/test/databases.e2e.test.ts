@@ -237,7 +237,7 @@ describe('databases', () => {
     await send(owner.agent, 'post', api(`/databases/${db.id}/rows`), { title: 'Big client' });
     const dbs = app.get(DbService);
     const unfiltered = () =>
-      Promise.all([dbs.db.select().from(databases), dbs.db.select().from(databaseFields), dbs.db.select().from(databaseRows), dbs.db.select().from(databaseViews)]).then((r) => r.map((x) => x.length));
+      (async () => { const n: number[] = []; for (const t of [databases, databaseFields, databaseRows, databaseViews]) n.push((await dbs.db.select().from(t)).length); return n; })();
     expect(await dbs.runAsUser(outsider.user.id, unfiltered)).toEqual([0, 0, 0, 0]);
     expect(await dbs.runAsUser(owner.user.id, unfiltered)).toEqual([1, 1, 1, 2]);
   });

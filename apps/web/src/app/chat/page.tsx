@@ -40,6 +40,8 @@ function Chat() {
   const [creating, setCreating] = useState<'channel' | 'dm' | null>(null);
   const [tick, setTick] = useState(0); // bumps on live events so the open conversation refetches
 
+  const lastGo = useRef<string | null>(null);
+  if (lastGo.current === `/chat?${params.toString()}`) lastGo.current = null; // landed; allow it again later
   const go = useCallback(
     (next: { ws?: string | null; c?: string | null; t?: string | null }) => {
       const q = new URLSearchParams();
@@ -49,7 +51,12 @@ function Chat() {
       if (w) q.set('ws', w);
       if (c) q.set('c', c);
       if (t) q.set('t', t);
-      router.replace(`/chat?${q.toString()}`);
+      const url = `/chat?${q.toString()}`;
+      // Don't queue the same replace twice while the URL catches up; a stale repeat can land after
+      // the user has already clicked away and pull them back to Chat.
+      if (url === lastGo.current) return;
+      lastGo.current = url;
+      router.replace(url);
     },
     [router, ws, channelId, threadId],
   );

@@ -25,6 +25,7 @@ test('turn on two-factor, sign in with a code, then with a recovery code', async
   const secret = (await page.getByLabel('Setup key').textContent())!.replace(/\s/g, '');
   await page.getByLabel('2. Enter the 6-digit code it shows').fill(totp(secret));
   await page.getByRole('button', { name: 'Turn on' }).click();
+  await expect(page.getByRole('list', { name: 'Recovery codes' }).locator('li')).toHaveCount(10);
   const codes = (await page.getByRole('list', { name: 'Recovery codes' }).locator('li').allTextContents()).map((c) => c.trim());
   expect(codes).toHaveLength(10);
   await page.getByRole('button', { name: 'I’ve saved them' }).click();

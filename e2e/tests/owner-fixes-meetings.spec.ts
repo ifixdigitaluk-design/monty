@@ -19,6 +19,7 @@ test('owner fixes: chat channels manage/delete, database delete, plan change; me
   await page.getByRole('button', { name: 'Delete channel' }).click();
   await expect(page.getByRole('button', { name: /Channel sales/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Channel general/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
 
   // Databases: visible delete.
   await nav(page, 'Databases');

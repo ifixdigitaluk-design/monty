@@ -136,7 +136,7 @@ describe('CRM', () => {
     ]) expect(r.status).toBe(404);
     expect((await outsider.agent.get(api('/search?q=secret'))).body.results).toEqual([]);
     const dbs = app.get(DbService);
-    const peek = () => Promise.all([dbs.db.select().from(crmCompanies), dbs.db.select().from(crmDeals)]).then((r) => r.map((x) => x.length));
+    const peek = async () => [(await dbs.db.select().from(crmCompanies)).length, (await dbs.db.select().from(crmDeals)).length]; // sequential: one transaction
     expect(await dbs.runAsUser(outsider.user.id, peek)).toEqual([0, 0]);
     expect(await dbs.runAsUser(owner.user.id, peek)).toEqual([1, 1]);
     expect((await send(owner.agent, 'delete', api(`/crm/companies/${c.id}`))).status).toBe(204);

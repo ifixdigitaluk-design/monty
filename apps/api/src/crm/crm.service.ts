@@ -180,12 +180,11 @@ export class CrmService {
   async getCompany(userId: string, id: string) {
     const r = await this.load<CrmCompany>(crmCompanies, 'Company', userId, id, 'workspace.read');
     const [company] = await this.companyDtos([r]);
-    const [contacts, deals, quotes, activities] = await Promise.all([
-      this.listContacts(userId, r.workspaceId, { companyId: id }),
-      this.listDeals(userId, r.workspaceId, { companyId: id }),
-      this.listQuotes(userId, r.workspaceId, { companyId: id }),
-      this.activities(userId, r.workspaceId, { companyId: id }),
-    ]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const contacts = await this.listContacts(userId, r.workspaceId, { companyId: id });
+    const deals = await this.listDeals(userId, r.workspaceId, { companyId: id });
+    const quotes = await this.listQuotes(userId, r.workspaceId, { companyId: id });
+    const activities = await this.activities(userId, r.workspaceId, { companyId: id });
     return { company: company!, contacts, deals, quotes, activities };
   }
 
@@ -249,7 +248,9 @@ export class CrmService {
   async getContact(userId: string, id: string) {
     const r = await this.load<CrmContact>(crmContacts, 'Contact', userId, id, 'workspace.read');
     const [contact] = await this.contactDtos([r]);
-    const [deals, activities] = await Promise.all([this.listDeals(userId, r.workspaceId, { contactId: id }), this.activities(userId, r.workspaceId, { contactId: id })]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const deals = await this.listDeals(userId, r.workspaceId, { contactId: id });
+    const activities = await this.activities(userId, r.workspaceId, { contactId: id });
     return { contact: contact!, deals, activities };
   }
 
@@ -340,7 +341,9 @@ export class CrmService {
   async getDeal(userId: string, id: string) {
     const r = await this.load<CrmDeal>(crmDeals, 'Deal', userId, id, 'workspace.read');
     const [deal] = await this.dealDtos([r]);
-    const [activities, quotes] = await Promise.all([this.activities(userId, r.workspaceId, { dealId: id }), this.listQuotes(userId, r.workspaceId, { dealId: id })]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const activities = await this.activities(userId, r.workspaceId, { dealId: id });
+    const quotes = await this.listQuotes(userId, r.workspaceId, { dealId: id });
     return { deal: deal!, activities, quotes };
   }
 
@@ -394,11 +397,10 @@ export class CrmService {
   private async activityDtos(rows: CrmActivity[]): Promise<CrmActivityDto[]> {
     if (!rows.length) return [];
     const pick = <K extends 'companyId' | 'contactId' | 'dealId'>(k: K) => [...new Set(rows.map((r) => r[k]).filter((x): x is string => !!x))];
-    const [companies, contacts, deals] = await Promise.all([
-      pick('companyId').length ? this.db.select({ id: crmCompanies.id, name: crmCompanies.name }).from(crmCompanies).where(inArray(crmCompanies.id, pick('companyId'))) : [],
-      pick('contactId').length ? this.db.select({ id: crmContacts.id, name: crmContacts.name }).from(crmContacts).where(inArray(crmContacts.id, pick('contactId'))) : [],
-      pick('dealId').length ? this.db.select({ id: crmDeals.id, title: crmDeals.title }).from(crmDeals).where(inArray(crmDeals.id, pick('dealId'))) : [],
-    ]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const companies = await (pick('companyId').length ? this.db.select({ id: crmCompanies.id, name: crmCompanies.name }).from(crmCompanies).where(inArray(crmCompanies.id, pick('companyId'))) : []);
+    const contacts = await (pick('contactId').length ? this.db.select({ id: crmContacts.id, name: crmContacts.name }).from(crmContacts).where(inArray(crmContacts.id, pick('contactId'))) : []);
+    const deals = await (pick('dealId').length ? this.db.select({ id: crmDeals.id, title: crmDeals.title }).from(crmDeals).where(inArray(crmDeals.id, pick('dealId'))) : []);
     const names = await this.names(rows.flatMap((r) => [r.assigneeId, r.createdById]));
     return rows.map((r) => ({
       id: r.id,
@@ -487,11 +489,10 @@ export class CrmService {
   private async quoteDtos(rows: CrmQuote[]): Promise<QuoteDto[]> {
     if (!rows.length) return [];
     const pick = <K extends 'companyId' | 'contactId' | 'dealId'>(k: K) => [...new Set(rows.map((r) => r[k]).filter((x): x is string => !!x))];
-    const [companies, contacts, deals] = await Promise.all([
-      pick('companyId').length ? this.db.select({ id: crmCompanies.id, name: crmCompanies.name, address: crmCompanies.address }).from(crmCompanies).where(inArray(crmCompanies.id, pick('companyId'))) : [],
-      pick('contactId').length ? this.db.select({ id: crmContacts.id, name: crmContacts.name, email: crmContacts.email }).from(crmContacts).where(inArray(crmContacts.id, pick('contactId'))) : [],
-      pick('dealId').length ? this.db.select({ id: crmDeals.id, title: crmDeals.title }).from(crmDeals).where(inArray(crmDeals.id, pick('dealId'))) : [],
-    ]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const companies = await (pick('companyId').length ? this.db.select({ id: crmCompanies.id, name: crmCompanies.name, address: crmCompanies.address }).from(crmCompanies).where(inArray(crmCompanies.id, pick('companyId'))) : []);
+    const contacts = await (pick('contactId').length ? this.db.select({ id: crmContacts.id, name: crmContacts.name, email: crmContacts.email }).from(crmContacts).where(inArray(crmContacts.id, pick('contactId'))) : []);
+    const deals = await (pick('dealId').length ? this.db.select({ id: crmDeals.id, title: crmDeals.title }).from(crmDeals).where(inArray(crmDeals.id, pick('dealId'))) : []);
     const names = await this.names(rows.map((r) => r.createdById));
     return rows.map((r) => ({
       id: r.id,

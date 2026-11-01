@@ -179,11 +179,10 @@ export class DatabasesService {
 
   async get(userId: string, id: string): Promise<DatabaseDto> {
     const { d, role } = await this.load(userId, id, 'workspace.read');
-    const [fields, views, rows] = await Promise.all([
-      this.fieldsOf(id),
-      this.dbs.db.select().from(databaseViews).where(eq(databaseViews.databaseId, id)).orderBy(asc(databaseViews.position), asc(databaseViews.createdAt)),
-      this.rowsWithNames(and(eq(databaseRows.databaseId, id), isNull(databaseRows.deletedAt))!),
-    ]);
+    // Sequential on purpose: inside a request transaction these share one database connection.
+    const fields = await this.fieldsOf(id);
+    const views = await this.dbs.db.select().from(databaseViews).where(eq(databaseViews.databaseId, id)).orderBy(asc(databaseViews.position), asc(databaseViews.createdAt));
+    const rows = await this.rowsWithNames(and(eq(databaseRows.databaseId, id), isNull(databaseRows.deletedAt))!);
     return {
       id: d.id,
       workspaceId: d.workspaceId,

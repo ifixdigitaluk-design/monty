@@ -53,8 +53,9 @@ test('CRM: company, contact, activity, follow-up for a colleague, deal through t
   await page.getByLabel('Stage of Acme rollout').selectOption('proposal');
   await expect(page.locator('[data-stage="proposal"]')).toContainText('Acme rollout');
   await page.getByRole('tab', { name: 'Overview' }).click();
-  await expect(page.getByText('£12,500.00')).toBeVisible(); // open value
-  await expect(page.getByText('£6,250.00')).toBeVisible(); // 50% weighted at Proposal
+  await expect(page.locator('[data-stage="proposal"]')).toHaveCount(0); // pipeline gone, overview shown
+  await expect(page.getByText('£12,500.00', { exact: true })).toBeVisible(); // open value
+  await expect(page.getByText('£6,250.00', { exact: true })).toBeVisible(); // 50% weighted at Proposal
 
   // Mia gets the follow-up in her inbox and completes it.
   await mia.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Inbox/ }).click();

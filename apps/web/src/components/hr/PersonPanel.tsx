@@ -26,6 +26,8 @@ export function PersonPanel({ org, userId, me, people, onClose, onChanged }: { o
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   const load = useCallback(async () => {
     try {
       const { profile } = await api.hr.profile(org, userId);
@@ -33,9 +35,9 @@ export function PersonPanel({ org, userId, me, people, onClose, onChanged }: { o
       setDocs(profile.private ? (await api.hr.documents(org, userId)).documents : null);
     } catch (err) {
       toast({ tone: 'error', message: errorMessage(err) });
-      onClose();
+      closeRef.current();
     }
-  }, [org, userId, toast, onClose]);
+  }, [org, userId, toast]);
   useEffect(() => {
     void load();
   }, [load]);

@@ -3,7 +3,7 @@
 import { canInWorkspace } from '@monty/domain';
 import type { MeetingDto, WorkspaceMemberDto } from '@monty/validation';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { SidePanel } from '@/components/crm/shared';
 import { Button, cx, EmptyState, ErrorBanner, Field, Input, Modal, PageLoading, Select, Spinner, Textarea, useToast } from '@/components/ui';
@@ -209,6 +209,9 @@ function MeetingPanel({ id, members, onClose, onChanged }: { id: string; members
   const [minutes, setMinutes] = useState('');
   const [newItem, setNewItem] = useState('');
   const [newWho, setNewWho] = useState('');
+  // Load once per meeting. (Depending on onClose would reload on every parent render and wipe typed minutes.)
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     api.meetings.get(id).then(
       (r) => {
@@ -217,10 +220,10 @@ function MeetingPanel({ id, members, onClose, onChanged }: { id: string; members
       },
       (err) => {
         toast({ tone: 'error', message: errorMessage(err) });
-        onClose();
+        closeRef.current();
       },
     );
-  }, [id, toast, onClose]);
+  }, [id, toast]);
   if (!m) return <SidePanel label="Meeting" onClose={onClose}><Spinner /></SidePanel>;
   const save = (patch: Parameters<typeof api.meetings.update>[1], done?: string) =>
     api.meetings.update(m.id, patch).then(
